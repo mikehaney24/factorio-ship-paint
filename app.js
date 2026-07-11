@@ -15,10 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushShapeSelect = document.getElementById('brushShape');
     
     const exportBtn = document.getElementById('exportBtn');
-    const exportModal = document.getElementById('exportModal');
-    const closeModalBtn = document.getElementById('closeModalBtn');
-    const copyBtn = document.getElementById('copyBtn');
-    const blueprintOutput = document.getElementById('blueprintOutput');
     
     // State
     let gridWidth = parseInt(widthInput.value, 10);
@@ -439,21 +435,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const bp = generateBlueprint();
-        blueprintOutput.value = bp;
-        exportModal.classList.remove('hidden');
-    });
-    
-    closeModalBtn.addEventListener('click', () => {
-        exportModal.classList.add('hidden');
-    });
-    
-    copyBtn.addEventListener('click', () => {
-        blueprintOutput.select();
-        document.execCommand('copy');
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => {
-            copyBtn.textContent = 'Copy to Clipboard';
-        }, 2000);
+        
+        navigator.clipboard.writeText(bp).then(() => {
+            const originalText = exportBtn.textContent;
+            exportBtn.textContent = 'Copied to clipboard!';
+            exportBtn.style.backgroundColor = '#10b981'; // Success green
+            
+            setTimeout(() => {
+                exportBtn.textContent = originalText;
+                exportBtn.style.backgroundColor = '';
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy blueprint:', err);
+            alert('Failed to copy to clipboard. Please check console.');
+        });
     });
     
     // Handle resize
