@@ -615,7 +615,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     shareBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(window.location.href).then(() => {
+        const publicUrl = 'https://mikehaney24.github.io/factorio-ship-paint/' + window.location.hash;
+        navigator.clipboard.writeText(publicUrl).then(() => {
             const originalText = shareBtn.textContent;
             shareBtn.textContent = 'Link copied!';
             shareBtn.style.backgroundColor = '#10b981'; // Success green
