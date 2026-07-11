@@ -82,9 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initCanvas() {
-        // Calculate tileSize based on available window space
-        const maxCanvasWidth = window.innerWidth - 100;
-        const maxCanvasHeight = window.innerHeight - 250;
+        // Calculate tileSize based on available wrapper space
+        const wrapper = canvas.parentElement;
+        const maxCanvasWidth = wrapper.clientWidth - 40; // 20px padding on each side
+        const maxCanvasHeight = wrapper.clientHeight - 40;
         
         const sizeX = Math.floor(maxCanvasWidth / gridWidth);
         const sizeY = Math.floor(maxCanvasHeight / gridHeight);
