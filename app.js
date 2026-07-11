@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushSizeInput = document.getElementById('brushSize');
     const brushSizeNumber = document.getElementById('brushSizeNumber');
     const brushShapeSelect = document.getElementById('brushShape');
+    const addWallsCheckbox = document.getElementById('addWallsCheckbox');
     
     const exportBtn = document.getElementById('exportBtn');
     
@@ -20,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let gridWidth = parseInt(widthInput.value, 10);
     let gridHeight = parseInt(heightInput.value, 10);
     let tileSize = 10;
+    let addWalls = addWallsCheckbox.checked;
     
     let isMouseDown = false;
     let currentButton = null; // 0 for left, 2 for right
@@ -40,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('factorio-ship-paint-grid', JSON.stringify({ w: gridWidth, h: gridHeight }));
             localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
             localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
+            localStorage.setItem('factorio-ship-paint-walls', addWallsCheckbox.checked);
         } catch (e) {
             console.error('Failed to save state to localStorage:', e);
         }
@@ -78,6 +81,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentBrushShape = brush.shape;
                     brushShapeSelect.value = brush.shape;
                 }
+            }
+            
+            const wallsStr = localStorage.getItem('factorio-ship-paint-walls');
+            if (wallsStr !== null) {
+                addWalls = wallsStr === 'true';
+                addWallsCheckbox.checked = addWalls;
             }
         } catch (e) {
             console.error('Failed to load state from localStorage:', e);
@@ -378,6 +387,11 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     });
     
+    addWallsCheckbox.addEventListener('change', (e) => {
+        addWalls = e.target.checked;
+        saveToStorage();
+    });
+    
     // Tool buttons
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
@@ -446,17 +460,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const centerY = Math.floor(gridHeight / 2);
         
         const tiles = [];
+        const entities = [];
+        let entityNumber = 1;
+        
+        const neighborOffsets = [
+            [-1, -1], [0, -1], [1, -1],
+            [-1,  0],          [1,  0],
+            [-1,  1], [0,  1], [1,  1]
+        ];
+        
         for (const tile of filledTiles) {
             const commaIdx = tile.indexOf(',');
             const tx = +tile.substring(0, commaIdx);
             const ty = +tile.substring(commaIdx + 1);
+            
+            const px = tx - centerX;
+            const py = ty - centerY;
+            
             tiles.push({
-                position: { 
-                    x: tx - centerX, 
-                    y: ty - centerY 
-                },
+                position: { x: px, y: py },
                 name: 'space-platform-foundation'
             });
+            
+            if (addWalls) {
+                let isEdge = false;
+                for (const [dx, dy] of neighborOffsets) {
+                    const nx = tx + dx;
+                    const ny = ty + dy;
+                    if (!filledTiles.has(`${nx},${ny}`)) {
+                        isEdge = true;
+                        break;
+                    }
+                }
+                
+                if (isEdge) {
+                    entities.push({
+                        entity_number: entityNumber++,
+                        name: "stone-wall",
+                        position: { x: px + 0.5, y: py + 0.5 }
+                    });
+                }
+            }
         }
         
         const blueprintData = {
@@ -473,6 +517,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 version: 562949953929216
             }
         };
+        
+        if (entities.length > 0) {
+            blueprintData.blueprint.entities = entities;
+        }
         
         const jsonStr = JSON.stringify(blueprintData);
         // Use pako (loaded via CDN)
