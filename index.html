@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factorio Ship Builder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Factorio Ship Builder</h1>
+            <p>Design your space platform foundation and export it directly to the game.</p>
+        </header>
+        
+        <main>
+            <div class="toolbar">
+                <div class="tool-group">
+                    <label>Grid Size:</label>
+                    <input type="number" id="gridWidth" value="50" min="10" max="300" title="Width">
+                    <span>×</span>
+                    <input type="number" id="gridHeight" value="50" min="10" max="300" title="Height">
+                </div>
+                
+                <div class="tool-group">
+                    <button id="undoBtn" class="btn-tool" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+                    <button id="redoBtn" class="btn-tool" disabled title="Redo (Ctrl+Y)">↷ Redo</button>
+                </div>
+                
+                <div class="tool-group">
+                    <button id="clearBtn" class="btn-danger">Clear All</button>
+                </div>
+                
+                <div class="tool-group">
+                    <label>Brush:</label>
+                    <select id="brushShape" class="dropdown">
+                        <option value="circle">Circle</option>
+                        <option value="square">Square</option>
+                        <option value="diamond">Diamond</option>
+                    </select>
+                    <input type="range" id="brushSize" min="1" max="300" value="1" title="Brush Size">
+                    <input type="number" id="brushSizeNumber" min="1" max="300" value="1" title="Brush Size Number">
+                </div>
+                
+                <div class="tool-group">
+                    <button id="exportBtn" class="btn-primary">Export Blueprint</button>
+                </div>
+            </div>
+            
+            <div class="canvas-wrapper">
+                <canvas id="gridCanvas"></canvas>
+            </div>
+            
+            <div id="exportModal" class="modal hidden">
+                <div class="modal-content">
+                    <h2>Blueprint Ready</h2>
+                    <p>Copy the string below and import it into Factorio.</p>
+                    <textarea id="blueprintOutput" readonly></textarea>
+                    <div class="modal-actions">
+                        <button id="copyBtn" class="btn-primary">Copy to Clipboard</button>
+                        <button id="closeModalBtn" class="btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- pako for zlib compression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
