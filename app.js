@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let isMouseDown = false;
     let currentButton = null; // 0 for left, 2 for right
+    let touchMode = 0; // 0 for draw, 2 for erase, 3 for pan
     let currentBrushSize = parseInt(brushSizeInput.value, 10);
     let currentBrushShape = brushShapeSelect.value;
     let hoverCoords = null;
@@ -34,6 +35,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let undoStack = [];
     let redoStack = [];
     let currentStateSnapshot = null;
+    
+    let activePointers = new Map();
+    
+    let cameraX = 0;
+    let cameraY = 0;
+    let cameraZoom = 1.0;
+    let cameraInitialized = false;
+    let isPanning = false;
+    let lastPanX = 0;
+    let lastPanY = 0;
+    let isPinching = false;
+    let lastPinchDist = 0;
     
     // Use a Set to store filled coordinates "x,y"
     let filledTiles = new Set();
@@ -269,17 +282,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initCanvas() {
-        // Calculate tileSize based on available wrapper space
         const wrapper = canvas.parentElement;
-        const maxCanvasWidth = wrapper.clientWidth - 40; // 20px padding on each side
-        const maxCanvasHeight = wrapper.clientHeight - 40;
+        canvas.width = wrapper.clientWidth;
+        canvas.height = wrapper.clientHeight;
         
-        const sizeX = Math.floor(maxCanvasWidth / gridWidth);
-        const sizeY = Math.floor(maxCanvasHeight / gridHeight);
-        tileSize = Math.max(5, Math.min(sizeX, sizeY, 20)); // clamp tile size
+        tileSize = 20; // Fixed logical tile size
         
-        canvas.width = gridWidth * tileSize;
-        canvas.height = gridHeight * tileSize;
+        if (!cameraInitialized) {
+            const gridPixelWidth = gridWidth * tileSize;
+            const gridPixelHeight = gridHeight * tileSize;
+            
+            const scaleX = (canvas.width - 100) / gridPixelWidth; // 100px padding
+            const scaleY = (canvas.height - 100) / gridPixelHeight;
+            cameraZoom = Math.min(scaleX, scaleY, 2.0);
+            
+            cameraX = (canvas.width - gridPixelWidth * cameraZoom) / 2;
+            cameraY = (canvas.height - gridPixelHeight * cameraZoom) / 2;
+            cameraInitialized = true;
+        }
         
         // Dynamically update brush size max to fit the largest canvas dimension
         const maxDim = Math.max(gridWidth, gridHeight);
@@ -307,20 +327,24 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function drawCanvas() {
         // Clear canvas
-        ctx.fillStyle = '#1e1e1e';
+        ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.save();
+        ctx.translate(cameraX, cameraY);
+        ctx.scale(cameraZoom, cameraZoom);
         
         // Draw grid lines
         ctx.strokeStyle = '#334155';
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = 0.5 / cameraZoom;
         ctx.beginPath();
         for (let x = 0; x <= gridWidth; x++) {
             ctx.moveTo(x * tileSize, 0);
-            ctx.lineTo(x * tileSize, canvas.height);
+            ctx.lineTo(x * tileSize, gridHeight * tileSize);
         }
         for (let y = 0; y <= gridHeight; y++) {
             ctx.moveTo(0, y * tileSize);
-            ctx.lineTo(canvas.width, y * tileSize);
+            ctx.lineTo(gridWidth * tileSize, y * tileSize);
         }
         ctx.stroke();
 
@@ -331,28 +355,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const commaIdx = tile.indexOf(',');
             const tx = +tile.substring(0, commaIdx);
             const ty = +tile.substring(commaIdx + 1);
-            ctx.rect(tx * tileSize + 1, ty * tileSize + 1, tileSize - 2, tileSize - 2);
+            ctx.rect(tx * tileSize, ty * tileSize, tileSize, tileSize);
         }
         ctx.fill();
         
         // Draw center axes slightly brighter
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 / cameraZoom;
         const cx = Math.floor(gridWidth / 2) * tileSize;
         const cy = Math.floor(gridHeight / 2) * tileSize;
         
         ctx.beginPath();
         ctx.moveTo(cx, 0);
-        ctx.lineTo(cx, canvas.height);
+        ctx.lineTo(cx, gridHeight * tileSize);
         ctx.stroke();
         
         ctx.beginPath();
         ctx.moveTo(0, cy);
-        ctx.lineTo(canvas.width, cy);
+        ctx.lineTo(gridWidth * tileSize, cy);
         ctx.stroke();
 
         // Draw brush preview
-        if (hoverCoords) {
+        if (hoverCoords && !isPanning && !isPinching) {
             if (isMouseDown) {
                 ctx.fillStyle = currentButton === 0 ? 'rgba(59, 130, 246, 0.5)' : 'rgba(239, 68, 68, 0.5)';
             } else {
@@ -381,15 +405,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             ctx.fill();
         }
+        
+        ctx.restore();
     }
     
     function getTileCoords(e) {
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
         
-        const tx = Math.floor(x / tileSize);
-        const ty = Math.floor(y / tileSize);
+        const worldX = (mouseX - cameraX) / cameraZoom;
+        const worldY = (mouseY - cameraY) / cameraZoom;
+        
+        const tx = Math.floor(worldX / tileSize);
+        const ty = Math.floor(worldY / tileSize);
         
         if (tx >= 0 && tx < gridWidth && ty >= 0 && ty < gridHeight) {
             return { tx, ty };
@@ -443,39 +472,207 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
     });
 
-    // Mouse Events
-    canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0 || e.button === 2) {
-            isMouseDown = true;
-            currentButton = e.button;
-            lastInteractCoords = null;
-            saveSnapshot();
-            interact(e);
-        }
-    });
-    
-    window.addEventListener('mouseup', (e) => {
-        if (isMouseDown && (e.button === 0 || e.button === 2)) {
+    // Pointer Events for Draw, Pan, Zoom
+    canvas.addEventListener('pointerdown', (e) => {
+        activePointers.set(e.pointerId, e);
+        
+        if (activePointers.size === 2) {
+            // Start pinch
             isMouseDown = false;
             currentButton = null;
+            isPinching = true;
+            isPanning = false;
+            
+            const pts = Array.from(activePointers.values());
+            const dx = pts[0].clientX - pts[1].clientX;
+            const dy = pts[0].clientY - pts[1].clientY;
+            lastPinchDist = Math.sqrt(dx*dx + dy*dy);
+            
+            lastPanX = (pts[0].clientX + pts[1].clientX) / 2;
+            lastPanY = (pts[0].clientY + pts[1].clientY) / 2;
+            return;
+        }
+        
+        if (activePointers.size > 2) return;
+        
+        if (e.button === 1 || (e.pointerType === 'touch' && touchMode === 3)) { 
+            // Middle click pan (or touch pan if we had a mode for it)
+            isPanning = true;
+            lastPanX = e.clientX;
+            lastPanY = e.clientY;
+            canvas.setPointerCapture(e.pointerId);
+            return;
+        }
+        
+        // Draw / Erase
+        if (e.button === 0 || e.button === 2 || e.pointerType === 'touch') {
+            isMouseDown = true;
+            if (e.pointerType === 'touch') {
+                currentButton = touchMode;
+            } else {
+                currentButton = e.button;
+            }
             lastInteractCoords = null;
-            commitSnapshot();
-            render(); // update brush preview color
+            canvas.setPointerCapture(e.pointerId);
+            saveSnapshot();
+            interact(e);
+            render();
         }
     });
-    
-    canvas.addEventListener('mousemove', (e) => {
+
+    canvas.addEventListener('pointermove', (e) => {
+        if (activePointers.has(e.pointerId)) {
+            activePointers.set(e.pointerId, e);
+        }
+        
+        if (isPinching && activePointers.size === 2) {
+            const pts = Array.from(activePointers.values());
+            const dx = pts[0].clientX - pts[1].clientX;
+            const dy = pts[0].clientY - pts[1].clientY;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            const zoomFactor = dist / lastPinchDist;
+            lastPinchDist = dist;
+            
+            const midX = (pts[0].clientX + pts[1].clientX) / 2;
+            const midY = (pts[0].clientY + pts[1].clientY) / 2;
+            
+            const panDx = midX - lastPanX;
+            const panDy = midY - lastPanY;
+            
+            lastPanX = midX;
+            lastPanY = midY;
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = midX - rect.left;
+            const mouseY = midY - rect.top;
+            const oldWorldX = (mouseX - cameraX) / cameraZoom;
+            const oldWorldY = (mouseY - cameraY) / cameraZoom;
+            
+            cameraZoom *= zoomFactor;
+            cameraZoom = Math.max(0.1, Math.min(cameraZoom, 5.0));
+            
+            cameraX = mouseX - oldWorldX * cameraZoom + panDx;
+            cameraY = mouseY - oldWorldY * cameraZoom + panDy;
+            
+            render();
+            return;
+        }
+        
+        if (isPanning) {
+            const panDx = e.clientX - lastPanX;
+            const panDy = e.clientY - lastPanY;
+            cameraX += panDx;
+            cameraY += panDy;
+            lastPanX = e.clientX;
+            lastPanY = e.clientY;
+            render();
+            return;
+        }
+        
         hoverCoords = getTileCoords(e);
         if (isMouseDown) {
             interact(e);
         }
-        render(); // update brush preview color and position
-    });
-
-    canvas.addEventListener('mouseout', () => {
-        hoverCoords = null;
         render();
     });
+
+    canvas.addEventListener('pointerup', (e) => {
+        activePointers.delete(e.pointerId);
+        
+        if (activePointers.size < 2) {
+            isPinching = false;
+        }
+        
+        if (isPanning && activePointers.size === 0) {
+            isPanning = false;
+        }
+        
+        if (isMouseDown && activePointers.size === 0) {
+            isMouseDown = false;
+            currentButton = null;
+            lastInteractCoords = null;
+            commitSnapshot();
+            render();
+        }
+    });
+
+    canvas.addEventListener('pointercancel', (e) => {
+        activePointers.delete(e.pointerId);
+        
+        if (activePointers.size < 2) {
+            isPinching = false;
+        }
+        
+        if (activePointers.size === 0) {
+            isPanning = false;
+            isMouseDown = false;
+            currentButton = null;
+            lastInteractCoords = null;
+            render();
+        }
+    });
+    
+    // Wheel zoom
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomFactor = 1.1;
+        const direction = Math.sign(e.deltaY);
+        
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const oldWorldX = (mouseX - cameraX) / cameraZoom;
+        const oldWorldY = (mouseY - cameraY) / cameraZoom;
+
+        if (direction > 0) {
+            cameraZoom /= zoomFactor;
+        } else {
+            cameraZoom *= zoomFactor;
+        }
+        
+        // Clamp zoom
+        cameraZoom = Math.max(0.1, Math.min(cameraZoom, 5.0));
+
+        cameraX = mouseX - oldWorldX * cameraZoom;
+        cameraY = mouseY - oldWorldY * cameraZoom;
+        
+        // Also update hover coords since mouse didn't move but world did
+        hoverCoords = getTileCoords(e);
+        
+        render();
+    }, { passive: false });
+    
+    // Touch Mode buttons
+    const drawBtn = document.getElementById('drawBtn');
+    const eraseBtn = document.getElementById('eraseBtn');
+    const panBtn = document.getElementById('panBtn');
+    
+    // touchMode: 0 = Draw, 2 = Erase, 3 = Pan
+    
+    if (drawBtn && eraseBtn && panBtn) {
+        drawBtn.addEventListener('click', () => {
+            touchMode = 0;
+            drawBtn.classList.add('active');
+            eraseBtn.classList.remove('active');
+            panBtn.classList.remove('active');
+        });
+        
+        eraseBtn.addEventListener('click', () => {
+            touchMode = 2;
+            eraseBtn.classList.add('active');
+            drawBtn.classList.remove('active');
+            panBtn.classList.remove('active');
+        });
+        
+        panBtn.addEventListener('click', () => {
+            touchMode = 3;
+            panBtn.classList.add('active');
+            drawBtn.classList.remove('active');
+            eraseBtn.classList.remove('active');
+        });
+    }
 
     brushSizeInput.addEventListener('input', (e) => {
         currentBrushSize = parseInt(e.target.value, 10);

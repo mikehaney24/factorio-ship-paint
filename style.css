@@ -22,38 +22,47 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
     background-image: radial-gradient(circle at top right, #1e293b, #0f172a);
 }
 
 .container {
-    width: 100%;
-    max-width: 100%;
+    position: relative;
+    width: 100vw;
     height: 100vh;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: row;
-    gap: 1.5rem;
-    box-sizing: border-box;
+    display: block;
 }
 
 .sidebar {
+    position: absolute;
+    top: 20px;
+    left: 20px;
     width: 320px;
-    flex-shrink: 0;
+    height: calc(100vh - 40px);
+    z-index: 10;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    height: 100%;
+    padding: 1.5rem;
+    background: var(--panel-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
 .canvas-area {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
     height: 100%;
-    min-width: 0;
+    z-index: 1;
 }
 
 header h1 {
@@ -162,6 +171,10 @@ button:disabled {
     transform: translateY(-1px);
 }
 
+button:active {
+    transform: translateY(0);
+}
+
 .btn-secondary {
     background-color: rgba(255, 255, 255, 0.1);
     color: white;
@@ -200,24 +213,35 @@ button:disabled {
 }
 
 .canvas-wrapper {
-    background: #000;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-    flex-grow: 1;
     width: 100%;
     height: 100%;
+    overflow: hidden;
+    display: block;
+}
+
+#canvas {
+    touch-action: none; /* Prevent native pinch-zoom to allow custom canvas zooming */
 }
 
 canvas {
     background-color: #1e1e1e;
     cursor: crosshair;
     image-rendering: pixelated;
-    box-shadow: 0 0 20px rgba(0,0,0,0.8);
 }
 
-
+@media (max-width: 768px) {
+    .sidebar {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 40vh;
+        border-radius: 20px 20px 0 0;
+        border: none;
+        border-top: 1px solid var(--border-color);
+    }
+    .mobile-only {
+        display: flex !important;
+        flex-direction: column;
+    }
+}
