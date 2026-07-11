@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateUrlHash() {
         if (filledTiles.size === 0) {
-            history.replaceState(null, '', window.location.pathname);
+            history.replaceState(null, '', window.location.pathname + window.location.search);
             return;
         }
         const state = {
@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
             binaryString += String.fromCharCode(deflated[i]);
         }
         const base64 = btoa(binaryString);
-        history.replaceState(null, '', window.location.pathname + '#s=' + base64);
+        history.replaceState(null, '', '#s=' + base64);
     }
 
     function loadFromUrl() {
