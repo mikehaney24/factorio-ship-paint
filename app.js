@@ -478,6 +478,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (activePointers.size === 2) {
             // Start pinch
+            if (isMouseDown && currentStateSnapshot) {
+                // Revert accidental drawing from the first finger of the pinch
+                filledTiles = new Set(currentStateSnapshot);
+                currentStateSnapshot = null;
+            }
+            
             isMouseDown = false;
             currentButton = null;
             isPinching = true;
@@ -678,6 +684,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBrushSize = parseInt(e.target.value, 10);
         brushSizeNumber.value = currentBrushSize;
         saveToStorage();
+        
+        const viewCenterX = canvas.width / 2;
+        const viewCenterY = canvas.height / 2;
+        const worldX = (viewCenterX - cameraX) / cameraZoom;
+        const worldY = (viewCenterY - cameraY) / cameraZoom;
+        hoverCoords = { 
+            tx: Math.floor(worldX / tileSize), 
+            ty: Math.floor(worldY / tileSize) 
+        };
+        
         render();
     });
 
@@ -693,6 +709,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBrushSize = val;
         brushSizeInput.value = currentBrushSize;
         saveToStorage();
+        
+        const viewCenterX = canvas.width / 2;
+        const viewCenterY = canvas.height / 2;
+        const worldX = (viewCenterX - cameraX) / cameraZoom;
+        const worldY = (viewCenterY - cameraY) / cameraZoom;
+        hoverCoords = { 
+            tx: Math.floor(worldX / tileSize), 
+            ty: Math.floor(worldY / tileSize) 
+        };
+        
         render();
     });
     
