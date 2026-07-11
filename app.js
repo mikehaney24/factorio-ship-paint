@@ -60,48 +60,113 @@ document.addEventListener('DOMContentLoaded', () => {
             history.replaceState(null, '', window.location.pathname + window.location.search);
             return;
         }
-        const state = {
-            w: gridWidth,
-            h: gridHeight,
-            t: [...filledTiles]
-        };
-        const jsonStr = JSON.stringify(state);
-        // pako is loaded via CDN
-        const deflated = pako.deflate(jsonStr);
+        
+        // Custom binary format:
+        // Byte 0-1: gridWidth
+        // Byte 2-3: gridHeight
+        // Byte 4+: packed bitset of filledTiles
+        const totalTiles = gridWidth * gridHeight;
+        const packedByteLength = Math.ceil(totalTiles / 8);
+        const buffer = new Uint8Array(4 + packedByteLength);
+        
+        buffer[0] = (gridWidth >> 8) & 0xFF;
+        buffer[1] = gridWidth & 0xFF;
+        buffer[2] = (gridHeight >> 8) & 0xFF;
+        buffer[3] = gridHeight & 0xFF;
+        
+        for (const tile of filledTiles) {
+            const commaIdx = tile.indexOf(',');
+            const tx = +tile.substring(0, commaIdx);
+            const ty = +tile.substring(commaIdx + 1);
+            if (tx >= 0 && tx < gridWidth && ty >= 0 && ty < gridHeight) {
+                const idx = ty * gridWidth + tx;
+                const byteIdx = 4 + Math.floor(idx / 8);
+                const bitIdx = idx % 8;
+                buffer[byteIdx] |= (1 << bitIdx);
+            }
+        }
+        
+        const deflated = pako.deflate(buffer);
         let binaryString = '';
         for (let i = 0; i < deflated.length; i++) {
             binaryString += String.fromCharCode(deflated[i]);
         }
-        const base64 = btoa(binaryString);
-        history.replaceState(null, '', '#s=' + base64);
+        const base64 = btoa(binaryString).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        history.replaceState(null, '', '#v1=' + base64);
     }
 
     function loadFromUrl() {
-        if (!window.location.hash || !window.location.hash.startsWith('#s=')) return false;
+        if (!window.location.hash) return false;
+        
         try {
-            const base64 = window.location.hash.substring(3);
-            const binaryString = atob(base64);
-            const deflated = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                deflated[i] = binaryString.charCodeAt(i);
+            if (window.location.hash.startsWith('#s=')) {
+                // legacy JSON-based format
+                let base64 = window.location.hash.substring(3);
+                // restore base64 padding if needed
+                base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+                while (base64.length % 4) base64 += '=';
+                
+                const binaryString = atob(base64);
+                const deflated = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    deflated[i] = binaryString.charCodeAt(i);
+                }
+                const jsonStr = pako.inflate(deflated, { to: 'string' });
+                const state = JSON.parse(jsonStr);
+                
+                if (state.w && state.h) {
+                    gridWidth = state.w;
+                    gridHeight = state.h;
+                    widthInput.value = gridWidth;
+                    heightInput.value = gridHeight;
+                }
+                if (state.t && Array.isArray(state.t)) {
+                    filledTiles = new Set(state.t);
+                }
+                
+                // Immediately upgrade to new format
+                setTimeout(updateUrlHash, 100);
+                return true;
+                
+            } else if (window.location.hash.startsWith('#v1=')) {
+                // new binary packed format
+                let base64 = window.location.hash.substring(4);
+                base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+                while (base64.length % 4) base64 += '=';
+                
+                const binaryString = atob(base64);
+                const deflated = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    deflated[i] = binaryString.charCodeAt(i);
+                }
+                const buffer = pako.inflate(deflated);
+                
+                if (buffer.length >= 4) {
+                    gridWidth = (buffer[0] << 8) | buffer[1];
+                    gridHeight = (buffer[2] << 8) | buffer[3];
+                    widthInput.value = gridWidth;
+                    heightInput.value = gridHeight;
+                    
+                    filledTiles.clear();
+                    const totalTiles = gridWidth * gridHeight;
+                    for (let idx = 0; idx < totalTiles; idx++) {
+                        const byteIdx = 4 + Math.floor(idx / 8);
+                        if (byteIdx < buffer.length) {
+                            const bitIdx = idx % 8;
+                            if (buffer[byteIdx] & (1 << bitIdx)) {
+                                const tx = idx % gridWidth;
+                                const ty = Math.floor(idx / gridWidth);
+                                filledTiles.add(`${tx},${ty}`);
+                            }
+                        }
+                    }
+                }
+                return true;
             }
-            const jsonStr = pako.inflate(deflated, { to: 'string' });
-            const state = JSON.parse(jsonStr);
-            
-            if (state.w && state.h) {
-                gridWidth = state.w;
-                gridHeight = state.h;
-                widthInput.value = gridWidth;
-                heightInput.value = gridHeight;
-            }
-            if (state.t && Array.isArray(state.t)) {
-                filledTiles = new Set(state.t);
-            }
-            return true;
         } catch (e) {
             console.error('Failed to load from URL:', e);
-            return false;
         }
+        return false;
     }
 
     function loadFromStorage() {
