@@ -44,10 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
             localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
             localStorage.setItem('factorio-ship-paint-walls', addWallsCheckbox.checked);
-            
-            updateUrlHash();
         } catch (e) {
             console.error('Failed to save state to localStorage:', e);
+        }
+        
+        try {
+            updateUrlHash();
+        } catch (e) {
+            console.error('Failed to update URL hash:', e);
         }
     }
 
