@@ -1,20 +1,20 @@
 # Factorio Ship Paint
 
-Factorio Ship Paint is a lightweight, responsive web tool that allows you to easily design your Factorio Space Age space platform foundations and export them directly to the game via blueprint strings.
+Factorio Ship Paint is a web tool for designing Factorio Space Age space platform foundations and exporting them to the game via blueprint strings.
 
 ## Features
 
-- **Infinite Canvas:** A fully zoomable and pannable infinite canvas to design platforms of any size.
-- **Factorio Blueprint Export:** Instantly export your drawing to a Factorio blueprint string (using `space-platform-foundation`).
-- **URL Sharing:** Instantly share your platform designs using extremely compressed URL hashes.
-- **Mobile Friendly:** Full support for multi-touch pinch-to-zoom, panning, and drawing on phones and tablets.
+- **Infinite Canvas:** A zoomable and pannable canvas to design platforms.
+- **Factorio Blueprint Export:** Export your drawing to a Factorio blueprint string (using `space-platform-foundation`).
+- **URL Sharing:** Share your platform designs via URL hashes.
+- **Mobile Support:** Touch controls for phones and tablets.
 
 ## Dependencies
 
 This is a static, vanilla HTML/CSS/JS application. There are no build tools (like Webpack or Vite) or Node.js dependencies required to run or edit this project.
 
 The application relies on one external library, which is automatically fetched via CDN:
-- **[pako](https://github.com/nodeca/pako)**: Used for fast zlib inflate/deflate compression for Factorio blueprint generation and URL state sharing.
+- **[pako](https://github.com/nodeca/pako)**: Used for zlib inflate/deflate compression for Factorio blueprint generation and URL state sharing.
 
 ## How to Build and Deploy Locally
 
