@@ -35,6 +35,55 @@ document.addEventListener('DOMContentLoaded', () => {
     // Use a Set to store filled coordinates "x,y"
     let filledTiles = new Set();
     
+    function saveToStorage() {
+        try {
+            localStorage.setItem('factorio-ship-paint-grid', JSON.stringify({ w: gridWidth, h: gridHeight }));
+            localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
+            localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
+        } catch (e) {
+            console.error('Failed to save state to localStorage:', e);
+        }
+    }
+
+    function loadFromStorage() {
+        try {
+            const gridStr = localStorage.getItem('factorio-ship-paint-grid');
+            if (gridStr) {
+                const grid = JSON.parse(gridStr);
+                if (grid.w && grid.h) {
+                    gridWidth = grid.w;
+                    gridHeight = grid.h;
+                    widthInput.value = gridWidth;
+                    heightInput.value = gridHeight;
+                }
+            }
+            
+            const tilesStr = localStorage.getItem('factorio-ship-paint-tiles');
+            if (tilesStr) {
+                const tiles = JSON.parse(tilesStr);
+                if (Array.isArray(tiles)) {
+                    filledTiles = new Set(tiles);
+                }
+            }
+            
+            const brushStr = localStorage.getItem('factorio-ship-paint-brush');
+            if (brushStr) {
+                const brush = JSON.parse(brushStr);
+                if (brush.size) {
+                    currentBrushSize = brush.size;
+                    brushSizeInput.value = brush.size;
+                    brushSizeNumber.value = brush.size;
+                }
+                if (brush.shape) {
+                    currentBrushShape = brush.shape;
+                    brushShapeSelect.value = brush.shape;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load state from localStorage:', e);
+        }
+    }
+    
     function updateUndoRedoButtons() {
         undoBtn.disabled = undoStack.length === 0;
         redoBtn.disabled = redoStack.length === 0;
@@ -50,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             undoStack.push(currentStateSnapshot);
             redoStack = [];
             updateUndoRedoButtons();
+            saveToStorage();
         }
         currentStateSnapshot = null;
     }
@@ -60,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filledTiles = undoStack.pop();
         render();
         updateUndoRedoButtons();
+        saveToStorage();
     }
     
     function redo() {
@@ -68,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filledTiles = redoStack.pop();
         render();
         updateUndoRedoButtons();
+        saveToStorage();
     }
     
     function isTileInBrush(dx, dy, radius, shape) {
@@ -293,6 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
     brushSizeInput.addEventListener('input', (e) => {
         currentBrushSize = parseInt(e.target.value, 10);
         brushSizeNumber.value = currentBrushSize;
+        saveToStorage();
         render();
     });
 
@@ -307,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         currentBrushSize = val;
         brushSizeInput.value = currentBrushSize;
+        saveToStorage();
         render();
     });
     
@@ -314,11 +368,13 @@ document.addEventListener('DOMContentLoaded', () => {
     brushSizeNumber.addEventListener('blur', (e) => {
         if (isNaN(parseInt(e.target.value, 10))) {
             brushSizeNumber.value = currentBrushSize;
+            saveToStorage();
         }
     });
 
     brushShapeSelect.addEventListener('change', (e) => {
         currentBrushShape = e.target.value;
+        saveToStorage();
         render();
     });
     
@@ -372,6 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 filledTiles = newSet;
                 commitSnapshot();
+                saveToStorage(); // ensure it saves even if commitSnapshot didn't see a tile change
                 
                 initCanvas();
             }
@@ -458,5 +515,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Initialize
+    loadFromStorage();
     initCanvas();
 });
