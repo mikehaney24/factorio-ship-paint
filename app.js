@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const addWallsCheckbox = document.getElementById('addWallsCheckbox');
     
     const exportBtn = document.getElementById('exportBtn');
+    const shareBtn = document.getElementById('shareBtn');
     
     // State
     let gridWidth = parseInt(widthInput.value, 10);
@@ -43,32 +44,64 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
             localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
             localStorage.setItem('factorio-ship-paint-walls', addWallsCheckbox.checked);
+            
+            updateUrlHash();
         } catch (e) {
             console.error('Failed to save state to localStorage:', e);
         }
     }
 
+    function updateUrlHash() {
+        if (filledTiles.size === 0) {
+            history.replaceState(null, '', window.location.pathname);
+            return;
+        }
+        const state = {
+            w: gridWidth,
+            h: gridHeight,
+            t: [...filledTiles]
+        };
+        const jsonStr = JSON.stringify(state);
+        // pako is loaded via CDN
+        const deflated = pako.deflate(jsonStr);
+        let binaryString = '';
+        for (let i = 0; i < deflated.length; i++) {
+            binaryString += String.fromCharCode(deflated[i]);
+        }
+        const base64 = btoa(binaryString);
+        history.replaceState(null, '', window.location.pathname + '#s=' + base64);
+    }
+
+    function loadFromUrl() {
+        if (!window.location.hash || !window.location.hash.startsWith('#s=')) return false;
+        try {
+            const base64 = window.location.hash.substring(3);
+            const binaryString = atob(base64);
+            const deflated = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                deflated[i] = binaryString.charCodeAt(i);
+            }
+            const jsonStr = pako.inflate(deflated, { to: 'string' });
+            const state = JSON.parse(jsonStr);
+            
+            if (state.w && state.h) {
+                gridWidth = state.w;
+                gridHeight = state.h;
+                widthInput.value = gridWidth;
+                heightInput.value = gridHeight;
+            }
+            if (state.t && Array.isArray(state.t)) {
+                filledTiles = new Set(state.t);
+            }
+            return true;
+        } catch (e) {
+            console.error('Failed to load from URL:', e);
+            return false;
+        }
+    }
+
     function loadFromStorage() {
         try {
-            const gridStr = localStorage.getItem('factorio-ship-paint-grid');
-            if (gridStr) {
-                const grid = JSON.parse(gridStr);
-                if (grid.w && grid.h) {
-                    gridWidth = grid.w;
-                    gridHeight = grid.h;
-                    widthInput.value = gridWidth;
-                    heightInput.value = gridHeight;
-                }
-            }
-            
-            const tilesStr = localStorage.getItem('factorio-ship-paint-tiles');
-            if (tilesStr) {
-                const tiles = JSON.parse(tilesStr);
-                if (Array.isArray(tiles)) {
-                    filledTiles = new Set(tiles);
-                }
-            }
-            
             const brushStr = localStorage.getItem('factorio-ship-paint-brush');
             if (brushStr) {
                 const brush = JSON.parse(brushStr);
@@ -88,8 +121,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 addWalls = wallsStr === 'true';
                 addWallsCheckbox.checked = addWalls;
             }
+            
+            // Try loading core state from URL first
+            if (loadFromUrl()) {
+                return;
+            }
+            
+            const gridStr = localStorage.getItem('factorio-ship-paint-grid');
+            if (gridStr) {
+                const grid = JSON.parse(gridStr);
+                if (grid.w && grid.h) {
+                    gridWidth = grid.w;
+                    gridHeight = grid.h;
+                    widthInput.value = gridWidth;
+                    heightInput.value = gridHeight;
+                }
+            }
+            
+            const tilesStr = localStorage.getItem('factorio-ship-paint-tiles');
+            if (tilesStr) {
+                const tiles = JSON.parse(tilesStr);
+                if (Array.isArray(tiles)) {
+                    filledTiles = new Set(tiles);
+                }
+            }
         } catch (e) {
-            console.error('Failed to load state from localStorage:', e);
+            console.error('Failed to load state:', e);
         }
     }
     
@@ -554,6 +611,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }).catch(err => {
             console.error('Failed to copy blueprint:', err);
             alert('Failed to copy to clipboard. Please check console.');
+        });
+    });
+    
+    shareBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(window.location.href).then(() => {
+            const originalText = shareBtn.textContent;
+            shareBtn.textContent = 'Link copied!';
+            shareBtn.style.backgroundColor = '#10b981'; // Success green
+            
+            setTimeout(() => {
+                shareBtn.textContent = originalText;
+                shareBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy link:', err);
+            alert('Failed to copy link to clipboard.');
         });
     });
     
