@@ -57,6 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
             localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
             localStorage.setItem('factorio-ship-paint-walls', addWallsCheckbox.checked);
+            
+            const numBeltsElem = document.getElementById('numBelts');
+            if (numBeltsElem) {
+                localStorage.setItem('factorio-ship-paint-belts', numBeltsElem.value);
+            }
         } catch (e) {
             console.error('Failed to save state to localStorage:', e);
         }
@@ -202,6 +207,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (wallsStr !== null) {
                 addWalls = wallsStr === 'true';
                 addWallsCheckbox.checked = addWalls;
+            }
+            
+            const beltsStr = localStorage.getItem('factorio-ship-paint-belts');
+            const numBeltsElem = document.getElementById('numBelts');
+            if (beltsStr !== null && numBeltsElem) {
+                numBeltsElem.value = beltsStr;
             }
             
             // Try loading core state from URL first
@@ -741,6 +752,13 @@ document.addEventListener('DOMContentLoaded', () => {
         saveToStorage();
     });
     
+    const numBeltsElem = document.getElementById('numBelts');
+    if (numBeltsElem) {
+        numBeltsElem.addEventListener('change', () => {
+            saveToStorage();
+        });
+    }
+    
     // Tool buttons
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
@@ -849,6 +867,173 @@ document.addEventListener('DOMContentLoaded', () => {
                         position: { x: px + 0.5, y: py + 0.5 }
                     });
                 }
+            }
+        }
+        
+        const numBeltsElem = document.getElementById('numBelts');
+        const numBelts = numBeltsElem ? parseInt(numBeltsElem.value, 10) : 0;
+        
+        if (numBelts > 0) {
+            let V = new Set(filledTiles);
+            
+            // Helper to erode V
+            function erode(tileSet) {
+                const nextSet = new Set();
+                const offsets = [
+                    [-1, -1], [0, -1], [1, -1],
+                    [-1,  0],          [1,  0],
+                    [-1,  1], [0,  1], [1,  1]
+                ];
+                for (const tile of tileSet) {
+                    const [tx, ty] = tile.split(',').map(Number);
+                    let isEdge = false;
+                    for (const [dx, dy] of offsets) {
+                        if (!tileSet.has(`${tx + dx},${ty + dy}`)) {
+                            isEdge = true;
+                            break;
+                        }
+                    }
+                    if (!isEdge) {
+                        nextSet.add(tile);
+                    }
+                }
+                return nextSet;
+            }
+
+            // 1. Initial inset
+            V = erode(V); // 1 cell in from edge
+            if (addWalls) {
+                V = erode(V); // 1 more cell in if walls are present
+            }
+            
+            const beltMap = new Map();
+            const dirOffsets = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // E, S, W, N
+            
+            for (let b = 0; b < numBelts; b++) {
+                // a. Open V with 2x2 to remove 1-tile bottlenecks
+                const C = new Set();
+                for (const tile of V) {
+                    const [x, y] = tile.split(',').map(Number);
+                    if (V.has(`${x+1},${y}`) && V.has(`${x},${y+1}`) && V.has(`${x+1},${y+1}`)) {
+                        C.add(tile);
+                    }
+                }
+                
+                V = new Set();
+                for (const center of C) {
+                    const [x, y] = center.split(',').map(Number);
+                    V.add(`${x},${y}`);
+                    V.add(`${x+1},${y}`);
+                    V.add(`${x},${y+1}`);
+                    V.add(`${x+1},${y+1}`);
+                }
+                
+                if (V.size === 0) break;
+                
+                // b. Find 4-way connected components of V
+                const unvisitedV = new Set(V);
+                const components = [];
+                while (unvisitedV.size > 0) {
+                    const start = unvisitedV.values().next().value;
+                    const comp = new Set();
+                    const queue = [start];
+                    unvisitedV.delete(start);
+                    
+                    while (queue.length > 0) {
+                        const curr = queue.shift();
+                        comp.add(curr);
+                        const [cx, cy] = curr.split(',').map(Number);
+                        const neighbors = [
+                            `${cx+1},${cy}`, `${cx-1},${cy}`,
+                            `${cx},${cy+1}`, `${cx},${cy-1}`
+                        ];
+                        for (const n of neighbors) {
+                            if (unvisitedV.has(n)) {
+                                unvisitedV.delete(n);
+                                queue.push(n);
+                            }
+                        }
+                    }
+                    components.push(comp);
+                }
+                
+                const currentBeltTiles = new Set();
+                
+                // c. Trace boundary of each component
+                for (const comp of components) {
+                    // Find top-left most tile
+                    let minX = Infinity;
+                    let minY = Infinity;
+                    for (const tile of comp) {
+                        const [x, y] = tile.split(',').map(Number);
+                        if (y < minY || (y === minY && x < minX)) {
+                            minY = y;
+                            minX = x;
+                        }
+                    }
+                    
+                    let currTx = minX;
+                    let currTy = minY;
+                    let currDir = 0; // E
+                    
+                    const visitedStates = new Set();
+                    
+                    while (true) {
+                        const stateKey = `${currTx},${currTy},${currDir}`;
+                        if (visitedStates.has(stateKey)) break;
+                        visitedStates.add(stateKey);
+                        
+                        let nextTx, nextTy, nextDir;
+                        
+                        const tryDirs = [
+                            (currDir + 3) % 4, // Left
+                            currDir,           // Straight
+                            (currDir + 1) % 4, // Right
+                            (currDir + 2) % 4  // Back
+                        ];
+                        
+                        for (const d of tryDirs) {
+                            const tx = currTx + dirOffsets[d][0];
+                            const ty = currTy + dirOffsets[d][1];
+                            if (comp.has(`${tx},${ty}`)) {
+                                nextTx = tx;
+                                nextTy = ty;
+                                nextDir = d;
+                                break;
+                            }
+                        }
+                        
+                        if (nextTx === undefined) break;
+                        
+                        // Factorio 2.0 doubled direction values: 0=N, 4=E, 8=S, 12=W
+                        const factorioDir = ((nextDir + 1) % 4) * 4;
+                        const px = currTx - centerX;
+                        const py = currTy - centerY;
+                        
+                        beltMap.set(`${currTx},${currTy}`, {
+                            entity_number: 0,
+                            name: "express-transport-belt",
+                            position: { x: px + 0.5, y: py + 0.5 },
+                            direction: factorioDir
+                        });
+                        
+                        currentBeltTiles.add(`${currTx},${currTy}`);
+                        
+                        currTx = nextTx;
+                        currTy = nextTy;
+                        currDir = nextDir;
+                    }
+                }
+                
+                // d. Remove traced tiles from V for the next belt
+                for (const t of currentBeltTiles) {
+                    V.delete(t);
+                }
+            }
+            
+            for (const belt of beltMap.values()) {
+                belt.entity_number = entityNumber++;
+                entities.push(belt);
             }
         }
         
