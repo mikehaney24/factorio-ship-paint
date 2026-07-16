@@ -550,10 +550,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.save();
                 ctx.translate(tx * tileSize + tileSize / 2, ty * tileSize + tileSize / 2);
                 // Subtract Math.PI/2 (90 degrees) to correct for the base icon orientation
-                let angle = -Math.PI / 2; // North
-                if (dir === 4) angle = 0; // East
-                else if (dir === 8) angle = Math.PI / 2; // South
-                else if (dir === 12) angle = Math.PI; // West
+                let angle = -Math.PI / 2; // North (0)
+                if (dir === 2) angle = 0; // East
+                else if (dir === 4) angle = Math.PI / 2; // South
+                else if (dir === 6) angle = Math.PI; // West
                 ctx.rotate(angle);
                 // express-transport-belt icon is 120x64 because it includes mipmaps.
                 // We only want to draw the first 64x64 block (the main icon).

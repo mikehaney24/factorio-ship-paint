@@ -155,7 +155,8 @@ export function recomputeEntities(filledTiles, addWalls, numBelts, computedWalls
                     
                     if (nextTx === undefined) break;
                     
-                    const factorioDir = ((nextDir + 1) % 4) * 4;
+                    // Factorio directions: 0=North, 2=East, 4=South, 6=West
+                    const factorioDir = ((nextDir + 1) % 4) * 2;
                     computedBelts.set(`${currTx},${currTy}`, factorioDir);
                     currentBeltTiles.add(`${currTx},${currTy}`);
                     
