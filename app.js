@@ -1,4 +1,27 @@
+import { generateBlueprint } from './blueprint.js';
+import { recomputeEntities as pathfindingRecompute } from './pathfinding.js';
+
 document.addEventListener('DOMContentLoaded', () => {
+    // ==========================================
+    // CONFIGURATION & CONSTANTS
+    // ==========================================
+    const CONFIG = {
+        TILE_SIZE: 20,
+        BG: {
+            SIZE: 1024,
+            NEBULA_PARALLAX: 0.15,
+            NEBULA_SPEED: 20,
+            STAR_PARALLAX: 0.02,
+            STAR_SPEED: 3,
+            COLOR: '#050510'
+        },
+        GRID_COLOR: '#334155',
+        COLORS: {
+            WALL_FALLBACK: '#94a3b8',
+            BELT_FALLBACK: '#3b82f6',
+            FOUNDATION_FALLBACK: '#eab308'
+        }
+    };
     const canvas = document.getElementById('gridCanvas');
     const ctx = canvas.getContext('2d');
     
@@ -116,180 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
     beltImg.onload = () => { if (typeof render === 'function') render(); };
     
     function recomputeEntities() {
-        computedWalls.clear();
-        computedBelts.clear();
-        
-        if (filledTiles.size === 0) return;
-        
-        const neighborOffsets = [
-            [-1, -1], [0, -1], [1, -1],
-            [-1,  0],          [1,  0],
-            [-1,  1], [0,  1], [1,  1]
-        ];
-        
-        if (addWalls) {
-            for (const tile of filledTiles) {
-                const commaIdx = tile.indexOf(',');
-                const tx = +tile.substring(0, commaIdx);
-                const ty = +tile.substring(commaIdx + 1);
-                
-                let isEdge = false;
-                for (const [dx, dy] of neighborOffsets) {
-                    if (!filledTiles.has(`${tx + dx},${ty + dy}`)) {
-                        isEdge = true;
-                        break;
-                    }
-                }
-                
-                if (isEdge) {
-                    computedWalls.add(tile);
-                }
-            }
-        }
-        
         const numBeltsElem = document.getElementById('numBelts');
         const numBelts = numBeltsElem ? parseInt(numBeltsElem.value, 10) : 0;
-        
-        if (numBelts > 0) {
-            let V = new Set(filledTiles);
-            
-            function erode(tileSet) {
-                const nextSet = new Set();
-                const offsets = [
-                    [-1, -1], [0, -1], [1, -1],
-                    [-1,  0],          [1,  0],
-                    [-1,  1], [0,  1], [1,  1]
-                ];
-                for (const tile of tileSet) {
-                    const [tx, ty] = tile.split(',').map(Number);
-                    let isEdge = false;
-                    for (const [dx, dy] of offsets) {
-                        if (!tileSet.has(`${tx + dx},${ty + dy}`)) {
-                            isEdge = true;
-                            break;
-                        }
-                    }
-                    if (!isEdge) {
-                        nextSet.add(tile);
-                    }
-                }
-                return nextSet;
-            }
-
-            V = erode(V);
-            if (addWalls) {
-                V = erode(V);
-            }
-            
-            const dirOffsets = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // E, S, W, N
-            
-            for (let b = 0; b < numBelts; b++) {
-                const C = new Set();
-                for (const tile of V) {
-                    const [x, y] = tile.split(',').map(Number);
-                    if (V.has(`${x+1},${y}`) && V.has(`${x},${y+1}`) && V.has(`${x+1},${y+1}`)) {
-                        C.add(tile);
-                    }
-                }
-                
-                V = new Set();
-                for (const center of C) {
-                    const [x, y] = center.split(',').map(Number);
-                    V.add(`${x},${y}`);
-                    V.add(`${x+1},${y}`);
-                    V.add(`${x},${y+1}`);
-                    V.add(`${x+1},${y+1}`);
-                }
-                
-                if (V.size === 0) break;
-                
-                const unvisitedV = new Set(V);
-                const components = [];
-                while (unvisitedV.size > 0) {
-                    const start = unvisitedV.values().next().value;
-                    const comp = new Set();
-                    const queue = [start];
-                    unvisitedV.delete(start);
-                    
-                    while (queue.length > 0) {
-                        const curr = queue.shift();
-                        comp.add(curr);
-                        const [cx, cy] = curr.split(',').map(Number);
-                        const neighbors = [
-                            `${cx+1},${cy}`, `${cx-1},${cy}`,
-                            `${cx},${cy+1}`, `${cx},${cy-1}`
-                        ];
-                        for (const n of neighbors) {
-                            if (unvisitedV.has(n)) {
-                                unvisitedV.delete(n);
-                                queue.push(n);
-                            }
-                        }
-                    }
-                    components.push(comp);
-                }
-                
-                const currentBeltTiles = new Set();
-                
-                for (const comp of components) {
-                    let minX = Infinity;
-                    let minY = Infinity;
-                    for (const tile of comp) {
-                        const [x, y] = tile.split(',').map(Number);
-                        if (y < minY || (y === minY && x < minX)) {
-                            minY = y;
-                            minX = x;
-                        }
-                    }
-                    
-                    let currTx = minX;
-                    let currTy = minY;
-                    let currDir = 0; // E
-                    
-                    const visitedStates = new Set();
-                    
-                    while (true) {
-                        const stateKey = `${currTx},${currTy},${currDir}`;
-                        if (visitedStates.has(stateKey)) break;
-                        visitedStates.add(stateKey);
-                        
-                        let nextTx, nextTy, nextDir;
-                        
-                        const tryDirs = [
-                            (currDir + 3) % 4, // Left
-                            currDir,           // Straight
-                            (currDir + 1) % 4, // Right
-                            (currDir + 2) % 4  // Back
-                        ];
-                        
-                        for (const d of tryDirs) {
-                            const tx = currTx + dirOffsets[d][0];
-                            const ty = currTy + dirOffsets[d][1];
-                            if (comp.has(`${tx},${ty}`)) {
-                                nextTx = tx;
-                                nextTy = ty;
-                                nextDir = d;
-                                break;
-                            }
-                        }
-                        
-                        if (nextTx === undefined) break;
-                        
-                        const factorioDir = ((nextDir + 1) % 4) * 4;
-                        computedBelts.set(`${currTx},${currTy}`, factorioDir);
-                        currentBeltTiles.add(`${currTx},${currTy}`);
-                        
-                        currTx = nextTx;
-                        currTy = nextTy;
-                        currDir = nextDir;
-                    }
-                }
-                
-                for (const t of currentBeltTiles) {
-                    V.delete(t);
-                }
-            }
-        }
+        pathfindingRecompute(filledTiles, addWalls, numBelts, computedWalls, computedBelts);
     }
     
     function saveToStorage() {
@@ -540,21 +392,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initCanvas() {
         const wrapper = canvas.parentElement;
-        canvas.width = wrapper.clientWidth;
-        canvas.height = wrapper.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
         
-        tileSize = 20; // Fixed logical tile size
+        // Setup high-DPI canvas
+        canvas.width = wrapper.clientWidth * dpr;
+        canvas.height = wrapper.clientHeight * dpr;
+        canvas.style.width = `${wrapper.clientWidth}px`;
+        canvas.style.height = `${wrapper.clientHeight}px`;
+        
+        // Reset scale before applying new one
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        
+        // Logical size used for zooming calculations
+        const logicalWidth = wrapper.clientWidth;
+        const logicalHeight = wrapper.clientHeight;
+        
+        tileSize = CONFIG.TILE_SIZE;
         
         if (!cameraInitialized) {
             const gridPixelWidth = gridWidth * tileSize;
             const gridPixelHeight = gridHeight * tileSize;
             
-            const scaleX = (canvas.width - 100) / gridPixelWidth; // 100px padding
-            const scaleY = (canvas.height - 100) / gridPixelHeight;
+            const scaleX = (logicalWidth - 100) / gridPixelWidth; // 100px padding
+            const scaleY = (logicalHeight - 100) / gridPixelHeight;
             cameraZoom = Math.min(scaleX, scaleY, 2.0);
             
-            cameraX = (canvas.width - gridPixelWidth * cameraZoom) / 2;
-            cameraY = (canvas.height - gridPixelHeight * cameraZoom) / 2;
+            cameraX = (logicalWidth - gridPixelWidth * cameraZoom) / 2;
+            cameraY = (logicalHeight - gridPixelHeight * cameraZoom) / 2;
             cameraInitialized = true;
         }
         
@@ -584,36 +449,36 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function drawCanvas() {
         // Draw Parallax Background layers
-        const bgSize = 1024;
+        const bgSize = CONFIG.BG.SIZE;
         const t = performance.now() / 1000;
         
-        ctx.fillStyle = '#050510';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = CONFIG.BG.COLOR;
+        // canvas.width/height is physical, but ctx is scaled to logical by dpr.
+        // We use wrapper client sizes for logical filling
+        const logicalWidth = canvas.parentElement.clientWidth;
+        const logicalHeight = canvas.parentElement.clientHeight;
+        ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         
-        // Nebula layer (faster drift and parallax, seems closer)
-        const nebulaParallax = 0.15;
-        const nebulaSpeedY = 20; // pixels per second downwards
-        let nebulaX = (cameraX * nebulaParallax) % bgSize;
+        // Nebula layer
+        let nebulaX = (cameraX * CONFIG.BG.NEBULA_PARALLAX) % bgSize;
         if (nebulaX > 0) nebulaX -= bgSize;
-        let nebulaY = ((cameraY * nebulaParallax) + t * nebulaSpeedY) % bgSize;
+        let nebulaY = ((cameraY * CONFIG.BG.NEBULA_PARALLAX) + t * CONFIG.BG.NEBULA_SPEED) % bgSize;
         if (nebulaY > 0) nebulaY -= bgSize;
         
-        for (let x = nebulaX; x < canvas.width; x += bgSize) {
-            for (let y = nebulaY; y < canvas.height; y += bgSize) {
+        for (let x = nebulaX; x < logicalWidth; x += bgSize) {
+            for (let y = nebulaY; y < logicalHeight; y += bgSize) {
                 ctx.drawImage(nebulaCanvas, x, y);
             }
         }
         
-        // Stars layer (slower drift and parallax, seems further away)
-        const starParallax = 0.02;
-        const starSpeedY = 3; // pixels per second downwards
-        let starX = (cameraX * starParallax) % bgSize;
+        // Stars layer
+        let starX = (cameraX * CONFIG.BG.STAR_PARALLAX) % bgSize;
         if (starX > 0) starX -= bgSize;
-        let starY = ((cameraY * starParallax) + t * starSpeedY) % bgSize;
+        let starY = ((cameraY * CONFIG.BG.STAR_PARALLAX) + t * CONFIG.BG.STAR_SPEED) % bgSize;
         if (starY > 0) starY -= bgSize;
         
-        for (let x = starX; x < canvas.width; x += bgSize) {
-            for (let y = starY; y < canvas.height; y += bgSize) {
+        for (let x = starX; x < logicalWidth; x += bgSize) {
+            for (let y = starY; y < logicalHeight; y += bgSize) {
                 ctx.drawImage(starfieldCanvas, x, y);
             }
         }
@@ -623,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.scale(cameraZoom, cameraZoom);
         
         // Draw grid lines
-        ctx.strokeStyle = '#334155';
+        ctx.strokeStyle = CONFIG.GRID_COLOR;
         ctx.lineWidth = 0.5 / cameraZoom;
         ctx.beginPath();
         for (let x = 0; x <= gridWidth; x++) {
@@ -651,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const sx = variant * 64;
                 ctx.drawImage(foundationImg, sx, 0, 64, 64, tx * tileSize, ty * tileSize, tileSize, tileSize);
             } else {
-                ctx.fillStyle = '#eab308';
+                ctx.fillStyle = CONFIG.COLORS.FOUNDATION_FALLBACK;
                 ctx.fillRect(tx * tileSize, ty * tileSize, tileSize, tileSize);
             }
         }
@@ -671,7 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const drawY = ty * tileSize - (tileSize * (22 / 64));
                 ctx.drawImage(wallImg, drawX, drawY, w, h);
             } else {
-                ctx.fillStyle = '#94a3b8';
+                ctx.fillStyle = CONFIG.COLORS.WALL_FALLBACK;
                 ctx.fillRect(tx * tileSize, ty * tileSize, tileSize, tileSize);
             }
         }
@@ -695,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.drawImage(beltImg, 0, 0, 64, 64, -tileSize / 2, -tileSize / 2, tileSize, tileSize);
                 ctx.restore();
             } else {
-                ctx.fillStyle = '#3b82f6';
+                ctx.fillStyle = CONFIG.COLORS.BELT_FALLBACK;
                 ctx.fillRect(tx * tileSize + tileSize/4, ty * tileSize + tileSize/4, tileSize/2, tileSize/2);
             }
         }
@@ -1204,92 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
     widthInput.addEventListener('input', updateGridDimensions);
     heightInput.addEventListener('input', updateGridDimensions);
     
-    // Export functionality
-    function generateBlueprint() {
-        if (filledTiles.size === 0) return '';
-        
-        // Ensure entities are up to date
-        recomputeEntities();
-        
-        const centerX = Math.floor(gridWidth / 2);
-        const centerY = Math.floor(gridHeight / 2);
-        
-        const tiles = [];
-        const entities = [];
-        let entityNumber = 1;
-        
-        for (const tile of filledTiles) {
-            const commaIdx = tile.indexOf(',');
-            const tx = +tile.substring(0, commaIdx);
-            const ty = +tile.substring(commaIdx + 1);
-            
-            const px = tx - centerX;
-            const py = ty - centerY;
-            
-            tiles.push({
-                position: { x: px, y: py },
-                name: 'space-platform-foundation'
-            });
-        }
-        
-        for (const wall of computedWalls) {
-            const commaIdx = wall.indexOf(',');
-            const tx = +wall.substring(0, commaIdx);
-            const ty = +wall.substring(commaIdx + 1);
-            const px = tx - centerX;
-            const py = ty - centerY;
-            entities.push({
-                entity_number: entityNumber++,
-                name: "stone-wall",
-                position: { x: px + 0.5, y: py + 0.5 }
-            });
-        }
-        
-        for (const [key, dir] of computedBelts.entries()) {
-            const commaIdx = key.indexOf(',');
-            const tx = +key.substring(0, commaIdx);
-            const ty = +key.substring(commaIdx + 1);
-            const px = tx - centerX;
-            const py = ty - centerY;
-            entities.push({
-                entity_number: entityNumber++,
-                name: "express-transport-belt",
-                position: { x: px + 0.5, y: py + 0.5 },
-                direction: dir
-            });
-        }
-        
-        
-        const blueprintData = {
-            blueprint: {
-                icons: [
-                    {
-                        signal: { type: "item", name: "space-platform-foundation" },
-                        index: 1
-                    }
-                ],
-                tiles: tiles,
-                item: "blueprint",
-                label: "Custom Ship Shape",
-                version: 562949953929216
-            }
-        };
-        
-        if (entities.length > 0) {
-            blueprintData.blueprint.entities = entities;
-        }
-        
-        const jsonStr = JSON.stringify(blueprintData);
-        // Use pako (loaded via CDN)
-        const deflated = pako.deflate(jsonStr);
-        // Convert Uint8Array to base64
-        let binaryString = '';
-        for (let i = 0; i < deflated.length; i++) {
-            binaryString += String.fromCharCode(deflated[i]);
-        }
-        const base64 = btoa(binaryString);
-        return '0' + base64;
-    }
+    // Export functionality is imported from blueprint.js
     
     exportBtn.addEventListener('click', () => {
         if (filledTiles.size === 0) {
@@ -1297,7 +1077,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        const bp = generateBlueprint();
+        recomputeEntities();
+        const bp = generateBlueprint(gridWidth, gridHeight, filledTiles, computedWalls, computedBelts);
         
         navigator.clipboard.writeText(bp).then(() => {
             const originalText = exportBtn.textContent;
