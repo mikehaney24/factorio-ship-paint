@@ -36,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushSizeInput = document.getElementById('brushSize');
     const brushSizeNumber = document.getElementById('brushSizeNumber');
     const brushShapeSelect = document.getElementById('brushShape');
+    const brushRotationInput = document.getElementById('brushRotation');
+    const brushRotationNumber = document.getElementById('brushRotationNumber');
     const addWallsCheckbox = document.getElementById('addWallsCheckbox');
     
     const exportBtn = document.getElementById('exportBtn');
@@ -52,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let touchMode = 0; // 0 for draw, 2 for erase, 3 for pan
     let currentBrushSize = parseInt(brushSizeInput.value, 10);
     let currentBrushShape = brushShapeSelect.value;
+    let currentBrushRotation = parseInt(brushRotationInput.value, 10) || 0;
     let hoverCoords = null;
     let lastInteractCoords = null;
     
@@ -148,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             localStorage.setItem('factorio-ship-paint-grid', JSON.stringify({ w: gridWidth, h: gridHeight }));
             localStorage.setItem('factorio-ship-paint-tiles', JSON.stringify([...filledTiles]));
-            localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape }));
+            localStorage.setItem('factorio-ship-paint-brush', JSON.stringify({ size: currentBrushSize, shape: currentBrushShape, rotation: currentBrushRotation }));
             localStorage.setItem('factorio-ship-paint-walls', addWallsCheckbox.checked);
             
             const numBeltsElem = document.getElementById('numBelts');
@@ -294,6 +297,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentBrushShape = brush.shape;
                     brushShapeSelect.value = brush.shape;
                 }
+                if (brush.rotation !== undefined) {
+                    currentBrushRotation = brush.rotation;
+                    brushRotationInput.value = brush.rotation;
+                    brushRotationNumber.value = brush.rotation;
+                }
             }
             
             const wallsStr = localStorage.getItem('factorio-ship-paint-walls');
@@ -379,13 +387,26 @@ document.addEventListener('DOMContentLoaded', () => {
         saveToStorage();
     }
     
-    function isTileInBrush(dx, dy, radius, shape) {
+    function isTileInBrush(dx, dy, radius, shape, rotation = 0) {
+        const theta = rotation * Math.PI / 180;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        
+        const rx = dx * cos + dy * sin;
+        const ry = -dx * sin + dy * cos;
+
         if (shape === 'circle') {
-            return dx*dx + dy*dy <= radius * radius;
+            return rx*rx + ry*ry <= radius * radius;
         } else if (shape === 'square') {
-            return Math.abs(dx) <= radius && Math.abs(dy) <= radius;
+            return Math.abs(rx) <= radius && Math.abs(ry) <= radius;
         } else if (shape === 'diamond') {
-            return Math.abs(dx) + Math.abs(dy) <= radius;
+            return Math.abs(rx) + Math.abs(ry) <= radius;
+        } else if (shape === 'rectangle') {
+            return Math.abs(rx) <= radius && Math.abs(ry) <= Math.max(1, Math.floor(radius / 2));
+        } else if (shape === 'triangle') {
+            return ry >= (2 * Math.abs(rx) - radius) && ry <= radius;
+        } else if (shape === 'half-circle') {
+            return rx*rx + ry*ry <= radius * radius && ry >= 0;
         }
         return false;
     }
@@ -603,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
                         const dx = x - centerTx;
                         const dy = y - centerTy;
-                        if (isTileInBrush(dx, dy, radius, currentBrushShape)) {
+                        if (isTileInBrush(dx, dy, radius, currentBrushShape, currentBrushRotation)) {
                             ctx.rect(x * tileSize, y * tileSize, tileSize, tileSize);
                         }
                     }
@@ -615,6 +636,17 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.restore();
     }
     
+    function resetHoverToCenter() {
+        const viewCenterX = canvas.clientWidth / 2;
+        const viewCenterY = canvas.clientHeight / 2;
+        const worldX = (viewCenterX - cameraX) / cameraZoom;
+        const worldY = (viewCenterY - cameraY) / cameraZoom;
+        hoverCoords = { 
+            tx: Math.floor(worldX / tileSize), 
+            ty: Math.floor(worldY / tileSize) 
+        };
+    }
+
     function getTileCoords(e) {
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
@@ -657,7 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
                     const dx = x - centerTx;
                     const dy = y - centerTy;
-                    if (isTileInBrush(dx, dy, radius, currentBrushShape)) {
+                    if (isTileInBrush(dx, dy, radius, currentBrushShape, currentBrushRotation)) {
                         const key = `${x},${y}`;
                         if (currentButton === 0) { // Left click
                             if (!filledTiles.has(key)) {
@@ -893,16 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBrushSize = parseInt(e.target.value, 10);
         brushSizeNumber.value = currentBrushSize;
         saveToStorage();
-        
-        const viewCenterX = canvas.width / 2;
-        const viewCenterY = canvas.height / 2;
-        const worldX = (viewCenterX - cameraX) / cameraZoom;
-        const worldY = (viewCenterY - cameraY) / cameraZoom;
-        hoverCoords = { 
-            tx: Math.floor(worldX / tileSize), 
-            ty: Math.floor(worldY / tileSize) 
-        };
-        
+        resetHoverToCenter();
         render();
     });
 
@@ -918,16 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBrushSize = val;
         brushSizeInput.value = currentBrushSize;
         saveToStorage();
-        
-        const viewCenterX = canvas.width / 2;
-        const viewCenterY = canvas.height / 2;
-        const worldX = (viewCenterX - cameraX) / cameraZoom;
-        const worldY = (viewCenterY - cameraY) / cameraZoom;
-        hoverCoords = { 
-            tx: Math.floor(worldX / tileSize), 
-            ty: Math.floor(worldY / tileSize) 
-        };
-        
+        resetHoverToCenter();
         render();
     });
     
@@ -942,7 +956,37 @@ document.addEventListener('DOMContentLoaded', () => {
     brushShapeSelect.addEventListener('change', (e) => {
         currentBrushShape = e.target.value;
         saveToStorage();
+        resetHoverToCenter();
         render();
+    });
+    
+    brushRotationInput.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val)) val = 0;
+        currentBrushRotation = val;
+        brushRotationNumber.value = val;
+        saveToStorage();
+        resetHoverToCenter();
+        render();
+    });
+
+    brushRotationNumber.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val)) return;
+        if (val < 0) val = 0;
+        if (val > 360) val = 360;
+        currentBrushRotation = val;
+        brushRotationInput.value = val;
+        saveToStorage();
+        resetHoverToCenter();
+        render();
+    });
+
+    brushRotationNumber.addEventListener('blur', (e) => {
+        if (isNaN(parseInt(e.target.value, 10))) {
+            brushRotationNumber.value = currentBrushRotation;
+            saveToStorage();
+        }
     });
     
     addWallsCheckbox.addEventListener('change', (e) => {
