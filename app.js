@@ -51,6 +51,247 @@ document.addEventListener('DOMContentLoaded', () => {
     // Use a Set to store filled coordinates "x,y"
     let filledTiles = new Set();
     
+    let computedWalls = new Set();
+    let computedBelts = new Map();
+    
+    // Background generation
+    const starfieldCanvas = document.createElement('canvas');
+    starfieldCanvas.width = 1024;
+    starfieldCanvas.height = 1024;
+    const sCtx = starfieldCanvas.getContext('2d');
+    
+    const nebulaCanvas = document.createElement('canvas');
+    nebulaCanvas.width = 1024;
+    nebulaCanvas.height = 1024;
+    const nCtx = nebulaCanvas.getContext('2d');
+    
+    // Clouds
+    for (let i = 0; i < 15; i++) {
+        const cx = Math.random() * 1024;
+        const cy = Math.random() * 1024;
+        const r = 100 + Math.random() * 200;
+        const hue = 200 + Math.random() * 40; // cool blue hues (less purple)
+        const sat = 5 + Math.random() * 10; // 5%-15% saturation (mostly greyscale)
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const drawX = cx + dx * 1024;
+                const drawY = cy + dy * 1024;
+                const grad = nCtx.createRadialGradient(drawX, drawY, 0, drawX, drawY, r);
+                grad.addColorStop(0, `hsla(${hue}, ${sat}%, 50%, 0.1)`);
+                grad.addColorStop(1, `hsla(${hue}, ${sat}%, 50%, 0)`);
+                nCtx.fillStyle = grad;
+                nCtx.beginPath();
+                nCtx.arc(drawX, drawY, r, 0, Math.PI * 2);
+                nCtx.fill();
+            }
+        }
+    }
+    
+    // Stars
+    for (let i = 0; i < 500; i++) {
+        const cx = Math.random() * 1024;
+        const cy = Math.random() * 1024;
+        const r = 0.5 + Math.random() * 1.5;
+        const a = 0.2 + Math.random() * 0.8;
+        sCtx.fillStyle = `rgba(255, 255, 255, ${a})`;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                sCtx.beginPath();
+                sCtx.arc(cx + dx * 1024, cy + dy * 1024, r, 0, Math.PI * 2);
+                sCtx.fill();
+            }
+        }
+    }
+    
+    const foundationImg = new Image();
+    foundationImg.src = 'assets/foundation.png?v=3';
+    foundationImg.onload = () => { if (typeof render === 'function') render(); };
+    
+    const wallImg = new Image();
+    wallImg.src = 'assets/wall.png?v=2';
+    wallImg.onload = () => { if (typeof render === 'function') render(); };
+    
+    const beltImg = new Image();
+    beltImg.src = 'assets/belt.png?v=3';
+    beltImg.onload = () => { if (typeof render === 'function') render(); };
+    
+    function recomputeEntities() {
+        computedWalls.clear();
+        computedBelts.clear();
+        
+        if (filledTiles.size === 0) return;
+        
+        const neighborOffsets = [
+            [-1, -1], [0, -1], [1, -1],
+            [-1,  0],          [1,  0],
+            [-1,  1], [0,  1], [1,  1]
+        ];
+        
+        if (addWalls) {
+            for (const tile of filledTiles) {
+                const commaIdx = tile.indexOf(',');
+                const tx = +tile.substring(0, commaIdx);
+                const ty = +tile.substring(commaIdx + 1);
+                
+                let isEdge = false;
+                for (const [dx, dy] of neighborOffsets) {
+                    if (!filledTiles.has(`${tx + dx},${ty + dy}`)) {
+                        isEdge = true;
+                        break;
+                    }
+                }
+                
+                if (isEdge) {
+                    computedWalls.add(tile);
+                }
+            }
+        }
+        
+        const numBeltsElem = document.getElementById('numBelts');
+        const numBelts = numBeltsElem ? parseInt(numBeltsElem.value, 10) : 0;
+        
+        if (numBelts > 0) {
+            let V = new Set(filledTiles);
+            
+            function erode(tileSet) {
+                const nextSet = new Set();
+                const offsets = [
+                    [-1, -1], [0, -1], [1, -1],
+                    [-1,  0],          [1,  0],
+                    [-1,  1], [0,  1], [1,  1]
+                ];
+                for (const tile of tileSet) {
+                    const [tx, ty] = tile.split(',').map(Number);
+                    let isEdge = false;
+                    for (const [dx, dy] of offsets) {
+                        if (!tileSet.has(`${tx + dx},${ty + dy}`)) {
+                            isEdge = true;
+                            break;
+                        }
+                    }
+                    if (!isEdge) {
+                        nextSet.add(tile);
+                    }
+                }
+                return nextSet;
+            }
+
+            V = erode(V);
+            if (addWalls) {
+                V = erode(V);
+            }
+            
+            const dirOffsets = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // E, S, W, N
+            
+            for (let b = 0; b < numBelts; b++) {
+                const C = new Set();
+                for (const tile of V) {
+                    const [x, y] = tile.split(',').map(Number);
+                    if (V.has(`${x+1},${y}`) && V.has(`${x},${y+1}`) && V.has(`${x+1},${y+1}`)) {
+                        C.add(tile);
+                    }
+                }
+                
+                V = new Set();
+                for (const center of C) {
+                    const [x, y] = center.split(',').map(Number);
+                    V.add(`${x},${y}`);
+                    V.add(`${x+1},${y}`);
+                    V.add(`${x},${y+1}`);
+                    V.add(`${x+1},${y+1}`);
+                }
+                
+                if (V.size === 0) break;
+                
+                const unvisitedV = new Set(V);
+                const components = [];
+                while (unvisitedV.size > 0) {
+                    const start = unvisitedV.values().next().value;
+                    const comp = new Set();
+                    const queue = [start];
+                    unvisitedV.delete(start);
+                    
+                    while (queue.length > 0) {
+                        const curr = queue.shift();
+                        comp.add(curr);
+                        const [cx, cy] = curr.split(',').map(Number);
+                        const neighbors = [
+                            `${cx+1},${cy}`, `${cx-1},${cy}`,
+                            `${cx},${cy+1}`, `${cx},${cy-1}`
+                        ];
+                        for (const n of neighbors) {
+                            if (unvisitedV.has(n)) {
+                                unvisitedV.delete(n);
+                                queue.push(n);
+                            }
+                        }
+                    }
+                    components.push(comp);
+                }
+                
+                const currentBeltTiles = new Set();
+                
+                for (const comp of components) {
+                    let minX = Infinity;
+                    let minY = Infinity;
+                    for (const tile of comp) {
+                        const [x, y] = tile.split(',').map(Number);
+                        if (y < minY || (y === minY && x < minX)) {
+                            minY = y;
+                            minX = x;
+                        }
+                    }
+                    
+                    let currTx = minX;
+                    let currTy = minY;
+                    let currDir = 0; // E
+                    
+                    const visitedStates = new Set();
+                    
+                    while (true) {
+                        const stateKey = `${currTx},${currTy},${currDir}`;
+                        if (visitedStates.has(stateKey)) break;
+                        visitedStates.add(stateKey);
+                        
+                        let nextTx, nextTy, nextDir;
+                        
+                        const tryDirs = [
+                            (currDir + 3) % 4, // Left
+                            currDir,           // Straight
+                            (currDir + 1) % 4, // Right
+                            (currDir + 2) % 4  // Back
+                        ];
+                        
+                        for (const d of tryDirs) {
+                            const tx = currTx + dirOffsets[d][0];
+                            const ty = currTy + dirOffsets[d][1];
+                            if (comp.has(`${tx},${ty}`)) {
+                                nextTx = tx;
+                                nextTy = ty;
+                                nextDir = d;
+                                break;
+                            }
+                        }
+                        
+                        if (nextTx === undefined) break;
+                        
+                        const factorioDir = ((nextDir + 1) % 4) * 4;
+                        computedBelts.set(`${currTx},${currTy}`, factorioDir);
+                        currentBeltTiles.add(`${currTx},${currTy}`);
+                        
+                        currTx = nextTx;
+                        currTy = nextTy;
+                        currDir = nextDir;
+                    }
+                }
+                
+                for (const t of currentBeltTiles) {
+                    V.delete(t);
+                }
+            }
+        }
+    }
+    
     function saveToStorage() {
         try {
             localStorage.setItem('factorio-ship-paint-grid', JSON.stringify({ w: gridWidth, h: gridHeight }));
@@ -217,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Try loading core state from URL first
             if (loadFromUrl()) {
+                recomputeEntities();
                 return;
             }
             
@@ -238,6 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     filledTiles = new Set(tiles);
                 }
             }
+            recomputeEntities();
         } catch (e) {
             console.error('Failed to load state:', e);
         }
@@ -259,6 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
             redoStack = [];
             updateUndoRedoButtons();
             saveToStorage();
+            recomputeEntities();
         }
         currentStateSnapshot = null;
     }
@@ -267,6 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (undoStack.length === 0) return;
         redoStack.push(new Set(filledTiles));
         filledTiles = undoStack.pop();
+        recomputeEntities();
         render();
         updateUndoRedoButtons();
         saveToStorage();
@@ -276,6 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (redoStack.length === 0) return;
         undoStack.push(new Set(filledTiles));
         filledTiles = redoStack.pop();
+        recomputeEntities();
         render();
         updateUndoRedoButtons();
         saveToStorage();
@@ -324,22 +570,53 @@ document.addEventListener('DOMContentLoaded', () => {
         
         render();
     }
-    let renderPending = false;
-    
     function render() {
-        if (!renderPending) {
-            renderPending = true;
-            requestAnimationFrame(() => {
-                drawCanvas();
-                renderPending = false;
-            });
-        }
+        // no-op, for compatibility with existing calls
     }
     
+    function gameLoop() {
+        drawCanvas();
+        requestAnimationFrame(gameLoop);
+    }
+    
+    // Start continuous animation loop
+    requestAnimationFrame(gameLoop);
+    
     function drawCanvas() {
-        // Clear canvas
-        ctx.fillStyle = '#0f172a';
+        // Draw Parallax Background layers
+        const bgSize = 1024;
+        const t = performance.now() / 1000;
+        
+        ctx.fillStyle = '#050510';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Nebula layer (faster drift and parallax, seems closer)
+        const nebulaParallax = 0.15;
+        const nebulaSpeedY = 20; // pixels per second downwards
+        let nebulaX = (cameraX * nebulaParallax) % bgSize;
+        if (nebulaX > 0) nebulaX -= bgSize;
+        let nebulaY = ((cameraY * nebulaParallax) + t * nebulaSpeedY) % bgSize;
+        if (nebulaY > 0) nebulaY -= bgSize;
+        
+        for (let x = nebulaX; x < canvas.width; x += bgSize) {
+            for (let y = nebulaY; y < canvas.height; y += bgSize) {
+                ctx.drawImage(nebulaCanvas, x, y);
+            }
+        }
+        
+        // Stars layer (slower drift and parallax, seems further away)
+        const starParallax = 0.02;
+        const starSpeedY = 3; // pixels per second downwards
+        let starX = (cameraX * starParallax) % bgSize;
+        if (starX > 0) starX -= bgSize;
+        let starY = ((cameraY * starParallax) + t * starSpeedY) % bgSize;
+        if (starY > 0) starY -= bgSize;
+        
+        for (let x = starX; x < canvas.width; x += bgSize) {
+            for (let y = starY; y < canvas.height; y += bgSize) {
+                ctx.drawImage(starfieldCanvas, x, y);
+            }
+        }
         
         ctx.save();
         ctx.translate(cameraX, cameraY);
@@ -359,16 +636,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         ctx.stroke();
 
-        // Draw filled tiles
-        ctx.fillStyle = '#eab308';
+        // Draw filled tiles (foundation)
         ctx.beginPath();
         for (const tile of filledTiles) {
             const commaIdx = tile.indexOf(',');
             const tx = +tile.substring(0, commaIdx);
             const ty = +tile.substring(commaIdx + 1);
-            ctx.rect(tx * tileSize, ty * tileSize, tileSize, tileSize);
+            if (foundationImg.complete && foundationImg.naturalWidth !== 0) {
+                // Pseudo-random deterministic hash based on coordinates to pick 1 of 16 variations
+                let h = tx * 374761393 + ty * 668265263;
+                h = (h ^ (h >> 13)) * 1274126177;
+                const variant = Math.abs(h ^ (h >> 16)) % 16;
+                
+                const sx = variant * 64;
+                ctx.drawImage(foundationImg, sx, 0, 64, 64, tx * tileSize, ty * tileSize, tileSize, tileSize);
+            } else {
+                ctx.fillStyle = '#eab308';
+                ctx.fillRect(tx * tileSize, ty * tileSize, tileSize, tileSize);
+            }
         }
-        ctx.fill();
+        
+        // Draw walls
+        for (const wall of computedWalls) {
+            const commaIdx = wall.indexOf(',');
+            const tx = +wall.substring(0, commaIdx);
+            const ty = +wall.substring(commaIdx + 1);
+            if (wallImg.complete && wallImg.naturalWidth !== 0) {
+                // wall-single.png is 128x86 for a 64x64 tile.
+                // 128/64 = 2 width ratio. 86/64 = 1.34375 height ratio.
+                // Center horizontally, align bottom with tile bottom.
+                const w = tileSize * 2;
+                const h = tileSize * (86 / 64);
+                const drawX = tx * tileSize - (tileSize / 2);
+                const drawY = ty * tileSize - (tileSize * (22 / 64));
+                ctx.drawImage(wallImg, drawX, drawY, w, h);
+            } else {
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillRect(tx * tileSize, ty * tileSize, tileSize, tileSize);
+            }
+        }
+        
+        // Draw belts
+        for (const [key, dir] of computedBelts.entries()) {
+            const commaIdx = key.indexOf(',');
+            const tx = +key.substring(0, commaIdx);
+            const ty = +key.substring(commaIdx + 1);
+            if (beltImg.complete && beltImg.naturalWidth !== 0) {
+                ctx.save();
+                ctx.translate(tx * tileSize + tileSize / 2, ty * tileSize + tileSize / 2);
+                // Subtract Math.PI/2 (90 degrees) to correct for the base icon orientation
+                let angle = -Math.PI / 2; // North
+                if (dir === 4) angle = 0; // East
+                else if (dir === 8) angle = Math.PI / 2; // South
+                else if (dir === 12) angle = Math.PI; // West
+                ctx.rotate(angle);
+                // express-transport-belt icon is 120x64 because it includes mipmaps.
+                // We only want to draw the first 64x64 block (the main icon).
+                ctx.drawImage(beltImg, 0, 0, 64, 64, -tileSize / 2, -tileSize / 2, tileSize, tileSize);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillRect(tx * tileSize + tileSize/4, ty * tileSize + tileSize/4, tileSize/2, tileSize/2);
+            }
+        }
         
         // Draw center axes slightly brighter
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
@@ -456,6 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const startY = Math.floor(centerTy - radius);
         const endY = Math.ceil(centerTy + radius);
 
+        let changed = false;
         for (let x = startX; x <= endX; x++) {
             for (let y = startY; y <= endY; y++) {
                 if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
@@ -466,10 +797,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (currentButton === 0) { // Left click
                             if (!filledTiles.has(key)) {
                                 filledTiles.add(key);
+                                changed = true;
                             }
                         } else if (currentButton === 2) { // Right click
                             if (filledTiles.has(key)) {
                                 filledTiles.delete(key);
+                                changed = true;
                             }
                         }
                     }
@@ -749,13 +1082,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     addWallsCheckbox.addEventListener('change', (e) => {
         addWalls = e.target.checked;
+        recomputeEntities();
         saveToStorage();
+        render();
     });
     
     const numBeltsElem = document.getElementById('numBelts');
     if (numBeltsElem) {
         numBeltsElem.addEventListener('change', () => {
+            recomputeEntities();
             saveToStorage();
+            render();
         });
     }
     
@@ -763,18 +1100,66 @@ document.addEventListener('DOMContentLoaded', () => {
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
 
-    // Keyboard shortcuts
+    // Keyboard shortcuts and WASD panning
+    const keys = { w: false, a: false, s: false, d: false };
+    let keyboardPanAnimation = null;
+    
+    function startKeyboardPan() {
+        if (keyboardPanAnimation) return;
+        
+        let lastTime = performance.now();
+        function panLoop(time) {
+            const dt = (time - lastTime) / 1000;
+            lastTime = time;
+            
+            const panSpeed = 600; // pixels per second
+            let dx = 0;
+            let dy = 0;
+            if (keys.w) dy += 1;
+            if (keys.s) dy -= 1;
+            if (keys.a) dx += 1;
+            if (keys.d) dx -= 1;
+            
+            if (dx !== 0 || dy !== 0) {
+                cameraX += dx * panSpeed * dt;
+                cameraY += dy * panSpeed * dt;
+                render();
+                keyboardPanAnimation = requestAnimationFrame(panLoop);
+            } else {
+                keyboardPanAnimation = null;
+            }
+        }
+        keyboardPanAnimation = requestAnimationFrame(panLoop);
+    }
+    
     window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.target.tagName === 'INPUT') return;
+        
+        const key = e.key.toLowerCase();
+        if (keys.hasOwnProperty(key)) {
+            keys[key] = true;
+            startKeyboardPan();
+        }
+        
+        if ((e.ctrlKey || e.metaKey) && key === 'z') {
             e.preventDefault();
             if (e.shiftKey) {
                 redo();
             } else {
                 undo();
             }
-        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
             e.preventDefault();
             redo();
+        }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        
+        const key = e.key.toLowerCase();
+        if (keys.hasOwnProperty(key)) {
+            keys[key] = false;
         }
     });
     
@@ -823,18 +1208,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function generateBlueprint() {
         if (filledTiles.size === 0) return '';
         
+        // Ensure entities are up to date
+        recomputeEntities();
+        
         const centerX = Math.floor(gridWidth / 2);
         const centerY = Math.floor(gridHeight / 2);
         
         const tiles = [];
         const entities = [];
         let entityNumber = 1;
-        
-        const neighborOffsets = [
-            [-1, -1], [0, -1], [1, -1],
-            [-1,  0],          [1,  0],
-            [-1,  1], [0,  1], [1,  1]
-        ];
         
         for (const tile of filledTiles) {
             const commaIdx = tile.indexOf(',');
@@ -848,194 +1230,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 position: { x: px, y: py },
                 name: 'space-platform-foundation'
             });
-            
-            if (addWalls) {
-                let isEdge = false;
-                for (const [dx, dy] of neighborOffsets) {
-                    const nx = tx + dx;
-                    const ny = ty + dy;
-                    if (!filledTiles.has(`${nx},${ny}`)) {
-                        isEdge = true;
-                        break;
-                    }
-                }
-                
-                if (isEdge) {
-                    entities.push({
-                        entity_number: entityNumber++,
-                        name: "stone-wall",
-                        position: { x: px + 0.5, y: py + 0.5 }
-                    });
-                }
-            }
         }
         
-        const numBeltsElem = document.getElementById('numBelts');
-        const numBelts = numBeltsElem ? parseInt(numBeltsElem.value, 10) : 0;
-        
-        if (numBelts > 0) {
-            let V = new Set(filledTiles);
-            
-            // Helper to erode V
-            function erode(tileSet) {
-                const nextSet = new Set();
-                const offsets = [
-                    [-1, -1], [0, -1], [1, -1],
-                    [-1,  0],          [1,  0],
-                    [-1,  1], [0,  1], [1,  1]
-                ];
-                for (const tile of tileSet) {
-                    const [tx, ty] = tile.split(',').map(Number);
-                    let isEdge = false;
-                    for (const [dx, dy] of offsets) {
-                        if (!tileSet.has(`${tx + dx},${ty + dy}`)) {
-                            isEdge = true;
-                            break;
-                        }
-                    }
-                    if (!isEdge) {
-                        nextSet.add(tile);
-                    }
-                }
-                return nextSet;
-            }
-
-            // 1. Initial inset
-            V = erode(V); // 1 cell in from edge
-            if (addWalls) {
-                V = erode(V); // 1 more cell in if walls are present
-            }
-            
-            const beltMap = new Map();
-            const dirOffsets = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // E, S, W, N
-            
-            for (let b = 0; b < numBelts; b++) {
-                // a. Open V with 2x2 to remove 1-tile bottlenecks
-                const C = new Set();
-                for (const tile of V) {
-                    const [x, y] = tile.split(',').map(Number);
-                    if (V.has(`${x+1},${y}`) && V.has(`${x},${y+1}`) && V.has(`${x+1},${y+1}`)) {
-                        C.add(tile);
-                    }
-                }
-                
-                V = new Set();
-                for (const center of C) {
-                    const [x, y] = center.split(',').map(Number);
-                    V.add(`${x},${y}`);
-                    V.add(`${x+1},${y}`);
-                    V.add(`${x},${y+1}`);
-                    V.add(`${x+1},${y+1}`);
-                }
-                
-                if (V.size === 0) break;
-                
-                // b. Find 4-way connected components of V
-                const unvisitedV = new Set(V);
-                const components = [];
-                while (unvisitedV.size > 0) {
-                    const start = unvisitedV.values().next().value;
-                    const comp = new Set();
-                    const queue = [start];
-                    unvisitedV.delete(start);
-                    
-                    while (queue.length > 0) {
-                        const curr = queue.shift();
-                        comp.add(curr);
-                        const [cx, cy] = curr.split(',').map(Number);
-                        const neighbors = [
-                            `${cx+1},${cy}`, `${cx-1},${cy}`,
-                            `${cx},${cy+1}`, `${cx},${cy-1}`
-                        ];
-                        for (const n of neighbors) {
-                            if (unvisitedV.has(n)) {
-                                unvisitedV.delete(n);
-                                queue.push(n);
-                            }
-                        }
-                    }
-                    components.push(comp);
-                }
-                
-                const currentBeltTiles = new Set();
-                
-                // c. Trace boundary of each component
-                for (const comp of components) {
-                    // Find top-left most tile
-                    let minX = Infinity;
-                    let minY = Infinity;
-                    for (const tile of comp) {
-                        const [x, y] = tile.split(',').map(Number);
-                        if (y < minY || (y === minY && x < minX)) {
-                            minY = y;
-                            minX = x;
-                        }
-                    }
-                    
-                    let currTx = minX;
-                    let currTy = minY;
-                    let currDir = 0; // E
-                    
-                    const visitedStates = new Set();
-                    
-                    while (true) {
-                        const stateKey = `${currTx},${currTy},${currDir}`;
-                        if (visitedStates.has(stateKey)) break;
-                        visitedStates.add(stateKey);
-                        
-                        let nextTx, nextTy, nextDir;
-                        
-                        const tryDirs = [
-                            (currDir + 3) % 4, // Left
-                            currDir,           // Straight
-                            (currDir + 1) % 4, // Right
-                            (currDir + 2) % 4  // Back
-                        ];
-                        
-                        for (const d of tryDirs) {
-                            const tx = currTx + dirOffsets[d][0];
-                            const ty = currTy + dirOffsets[d][1];
-                            if (comp.has(`${tx},${ty}`)) {
-                                nextTx = tx;
-                                nextTy = ty;
-                                nextDir = d;
-                                break;
-                            }
-                        }
-                        
-                        if (nextTx === undefined) break;
-                        
-                        // Factorio 2.0 doubled direction values: 0=N, 4=E, 8=S, 12=W
-                        const factorioDir = ((nextDir + 1) % 4) * 4;
-                        const px = currTx - centerX;
-                        const py = currTy - centerY;
-                        
-                        beltMap.set(`${currTx},${currTy}`, {
-                            entity_number: 0,
-                            name: "express-transport-belt",
-                            position: { x: px + 0.5, y: py + 0.5 },
-                            direction: factorioDir
-                        });
-                        
-                        currentBeltTiles.add(`${currTx},${currTy}`);
-                        
-                        currTx = nextTx;
-                        currTy = nextTy;
-                        currDir = nextDir;
-                    }
-                }
-                
-                // d. Remove traced tiles from V for the next belt
-                for (const t of currentBeltTiles) {
-                    V.delete(t);
-                }
-            }
-            
-            for (const belt of beltMap.values()) {
-                belt.entity_number = entityNumber++;
-                entities.push(belt);
-            }
+        for (const wall of computedWalls) {
+            const commaIdx = wall.indexOf(',');
+            const tx = +wall.substring(0, commaIdx);
+            const ty = +wall.substring(commaIdx + 1);
+            const px = tx - centerX;
+            const py = ty - centerY;
+            entities.push({
+                entity_number: entityNumber++,
+                name: "stone-wall",
+                position: { x: px + 0.5, y: py + 0.5 }
+            });
         }
+        
+        for (const [key, dir] of computedBelts.entries()) {
+            const commaIdx = key.indexOf(',');
+            const tx = +key.substring(0, commaIdx);
+            const ty = +key.substring(commaIdx + 1);
+            const px = tx - centerX;
+            const py = ty - centerY;
+            entities.push({
+                entity_number: entityNumber++,
+                name: "express-transport-belt",
+                position: { x: px + 0.5, y: py + 0.5 },
+                direction: dir
+            });
+        }
+        
         
         const blueprintData = {
             blueprint: {
