@@ -73,6 +73,31 @@
                     </div>
                 </div>
                 
+                <div class="tool-group">
+                    <label>Background Image URL:</label>
+                    <div class="input-row" style="margin-bottom: 0.5rem;">
+                        <input type="url" id="bgImageUrl" placeholder="https://..." style="flex-grow: 1; padding: 4px; box-sizing: border-box; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px;">
+                        <button id="clearBgBtn" class="btn-tool" style="padding: 4px 8px; margin-left: 4px;">Clear</button>
+                    </div>
+                    
+                    <div id="bgControls" style="display: none;">
+                        <label>Image Scale:</label>
+                        <div class="input-row">
+                            <input type="range" id="bgScale" min="0.1" max="10" step="0.1" value="1" title="Image Scale" style="flex-grow: 1;">
+                            <input type="number" id="bgScaleNumber" min="0.1" max="10" step="0.1" value="1" title="Image Scale Number" style="width: 70px;">
+                        </div>
+                        
+                        <label style="margin-top: 0.5rem;">Image Rotation:</label>
+                        <div class="input-row">
+                            <input type="range" id="bgRotation" min="0" max="360" step="1" value="0" title="Image Rotation" style="flex-grow: 1;">
+                            <input type="number" id="bgRotationNumber" min="0" max="360" step="1" value="0" title="Image Rotation Number" style="width: 70px;">
+                        </div>
+
+                        <label style="margin-top: 0.5rem;">Image Opacity:</label>
+                        <input type="range" id="bgOpacity" min="0" max="1" step="0.05" value="0.5" title="Image Opacity" style="width: 100%; margin-bottom: 0.5rem;">
+                    </div>
+                </div>
+
                 <div class="tool-group" style="margin-top: 1rem;">
                     <label>Belts Around Edge:</label>
                     <select id="numBelts" class="dropdown" style="width: 100%; margin-bottom: 0.5rem;">

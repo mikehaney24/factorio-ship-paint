@@ -40,6 +40,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushRotationNumber = document.getElementById('brushRotationNumber');
     const addWallsCheckbox = document.getElementById('addWallsCheckbox');
     
+    const bgImageUrl = document.getElementById('bgImageUrl');
+    const clearBgBtn = document.getElementById('clearBgBtn');
+    const bgControls = document.getElementById('bgControls');
+    const bgScaleInput = document.getElementById('bgScale');
+    const bgScaleNumber = document.getElementById('bgScaleNumber');
+    const bgRotationInput = document.getElementById('bgRotation');
+    const bgRotationNumber = document.getElementById('bgRotationNumber');
+    const bgOpacityInput = document.getElementById('bgOpacity');
+    
+
+    
     const exportBtn = document.getElementById('exportBtn');
     const shareBtn = document.getElementById('shareBtn');
     
@@ -57,6 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentBrushRotation = parseInt(brushRotationInput.value, 10) || 0;
     let hoverCoords = null;
     let lastInteractCoords = null;
+    let lastMouseEvent = null;
+    
+    let customBgImageObj = null;
+    let customBgScale = 1;
+    let customBgRotation = 0;
+    let customBgOpacity = 0.5;
     
     let undoStack = [];
     let redoStack = [];
@@ -158,6 +175,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (numBeltsElem) {
                 localStorage.setItem('factorio-ship-paint-belts', numBeltsElem.value);
             }
+            
+            localStorage.setItem('factorio-ship-paint-bg', bgImageUrl.value);
+            localStorage.setItem('factorio-ship-paint-bg-settings', JSON.stringify({
+                scale: customBgScale,
+                rotation: customBgRotation,
+                opacity: customBgOpacity
+            }));
         } catch (e) {
             console.error('Failed to save state to localStorage:', e);
         }
@@ -206,16 +230,73 @@ document.addEventListener('DOMContentLoaded', () => {
             binaryString += String.fromCharCode(deflated[i]);
         }
         const base64 = btoa(binaryString).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        history.replaceState(null, '', '#v1=' + base64);
+        
+        const params = new URLSearchParams();
+        const numBeltsElem = document.getElementById('numBelts');
+        if (numBeltsElem && numBeltsElem.value && numBeltsElem.value !== '0') {
+            params.set('belts', numBeltsElem.value);
+        }
+        if (addWalls) {
+            params.set('walls', '1');
+        }
+        if (bgImageUrl.value) {
+            params.set('bg', bgImageUrl.value);
+            if (customBgScale !== 1) params.set('bgs', customBgScale);
+            if (customBgRotation !== 0) params.set('bgr', customBgRotation);
+            if (customBgOpacity !== 0.5) params.set('bgo', customBgOpacity);
+        }
+
+        const paramsStr = params.toString();
+        const hashStr = '#v1=' + base64 + (paramsStr ? '&' + paramsStr : '');
+        history.replaceState(null, '', hashStr);
     }
 
     function loadFromUrl() {
         if (!window.location.hash) return false;
         
         try {
-            if (window.location.hash.startsWith('#s=')) {
+            let hashStr = window.location.hash;
+            let paramsPart = '';
+            
+            const ampersandIdx = hashStr.indexOf('&');
+            if (ampersandIdx !== -1) {
+                paramsPart = hashStr.substring(ampersandIdx + 1);
+                hashStr = hashStr.substring(0, ampersandIdx);
+            }
+
+            if (paramsPart) {
+                const params = new URLSearchParams(paramsPart);
+                if (params.has('belts')) {
+                    const numBeltsElem = document.getElementById('numBelts');
+                    if (numBeltsElem) numBeltsElem.value = params.get('belts');
+                }
+                if (params.has('walls')) {
+                    addWalls = params.get('walls') === '1';
+                    addWallsCheckbox.checked = addWalls;
+                }
+                if (params.has('bg')) {
+                    bgImageUrl.value = params.get('bg');
+                }
+                if (params.has('bgs')) {
+                    customBgScale = parseFloat(params.get('bgs')) || 1;
+                    bgScaleInput.value = customBgScale;
+                    bgScaleNumber.value = customBgScale;
+                }
+                if (params.has('bgr')) {
+                    customBgRotation = parseInt(params.get('bgr'), 10) || 0;
+                    bgRotationInput.value = customBgRotation;
+                    bgRotationNumber.value = customBgRotation;
+                }
+                if (params.has('bgo')) {
+                    customBgOpacity = parseFloat(params.get('bgo'));
+                    if (isNaN(customBgOpacity)) customBgOpacity = 0.5;
+                    bgOpacityInput.value = customBgOpacity;
+                }
+            }
+
+            if (hashStr.startsWith('#s=')) {
                 // legacy JSON-based format
-                let base64 = window.location.hash.substring(3);
+                let base64 = hashStr.substring(3);
                 // restore base64 padding if needed
                 base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
                 while (base64.length % 4) base64 += '=';
@@ -240,11 +321,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Immediately upgrade to new format
                 setTimeout(updateUrlHash, 100);
+                
+                if (bgImageUrl.value) {
+                    bgImageUrl.dispatchEvent(new Event('input'));
+                }
+                
                 return true;
                 
-            } else if (window.location.hash.startsWith('#v1=')) {
+            } else if (hashStr.startsWith('#v1=')) {
                 // new binary packed format
-                let base64 = window.location.hash.substring(4);
+                let base64 = hashStr.substring(4);
                 base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
                 while (base64.length % 4) base64 += '=';
                 
@@ -275,6 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
+                
+                if (bgImageUrl.value) {
+                    bgImageUrl.dispatchEvent(new Event('input'));
+                }
+                
                 return true;
             }
         } catch (e) {
@@ -316,10 +407,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 numBeltsElem.value = beltsStr;
             }
             
+            const bgStr = localStorage.getItem('factorio-ship-paint-bg');
+            if (bgStr !== null) {
+                bgImageUrl.value = bgStr;
+            }
+            
+            const bgSettingsStr = localStorage.getItem('factorio-ship-paint-bg-settings');
+            if (bgSettingsStr) {
+                const bgSettings = JSON.parse(bgSettingsStr);
+                if (bgSettings.scale !== undefined) {
+                    customBgScale = bgSettings.scale;
+                    bgScaleInput.value = customBgScale;
+                    bgScaleNumber.value = customBgScale;
+                }
+                if (bgSettings.rotation !== undefined) {
+                    customBgRotation = bgSettings.rotation;
+                    bgRotationInput.value = customBgRotation;
+                    bgRotationNumber.value = customBgRotation;
+                }
+                if (bgSettings.opacity !== undefined) {
+                    customBgOpacity = bgSettings.opacity;
+                    bgOpacityInput.value = customBgOpacity;
+                }
+            }
+
             // Try loading core state from URL first
             if (loadFromUrl()) {
                 recomputeEntities();
                 return;
+            }
+            
+            if (bgImageUrl.value) {
+                bgImageUrl.dispatchEvent(new Event('input'));
             }
             
             const gridStr = localStorage.getItem('factorio-ship-paint-grid');
@@ -508,6 +627,24 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.translate(cameraX, cameraY);
         ctx.scale(cameraZoom, cameraZoom);
         
+        if (customBgImageObj) {
+            ctx.globalAlpha = customBgOpacity;
+            const imgWidth = customBgImageObj.width * customBgScale;
+            const imgHeight = customBgImageObj.height * customBgScale;
+            const gridPixelWidth = gridWidth * tileSize;
+            const gridPixelHeight = gridHeight * tileSize;
+            
+            ctx.save();
+            ctx.translate(gridPixelWidth / 2, gridPixelHeight / 2);
+            ctx.rotate(customBgRotation * Math.PI / 180);
+            ctx.drawImage(customBgImageObj, -imgWidth / 2, -imgHeight / 2, imgWidth, imgHeight);
+            ctx.restore();
+            
+            ctx.globalAlpha = 1.0;
+        }
+        
+        ctx.globalAlpha = customBgImageObj ? 0.4 : 1.0;
+        
         // Draw grid lines
         ctx.strokeStyle = CONFIG.GRID_COLOR;
         ctx.lineWidth = 0.5 / cameraZoom;
@@ -613,10 +750,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const centerTx = hoverCoords.tx;
             const centerTy = hoverCoords.ty;
 
-            const startX = Math.floor(centerTx - radius);
-            const endX = Math.ceil(centerTx + radius);
-            const startY = Math.floor(centerTy - radius);
-            const endY = Math.ceil(centerTy + radius);
+            const boundingRadius = radius * Math.SQRT2;
+            const startX = Math.floor(centerTx - boundingRadius);
+            const endX = Math.ceil(centerTx + boundingRadius);
+            const startY = Math.floor(centerTy - boundingRadius);
+            const endY = Math.ceil(centerTy + boundingRadius);
 
             ctx.beginPath();
             for (let x = startX; x <= endX; x++) {
@@ -678,10 +816,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const centerTx = coords.tx;
         const centerTy = coords.ty;
 
-        const startX = Math.floor(centerTx - radius);
-        const endX = Math.ceil(centerTx + radius);
-        const startY = Math.floor(centerTy - radius);
-        const endY = Math.ceil(centerTy + radius);
+        const boundingRadius = radius * Math.SQRT2;
+        const startX = Math.floor(centerTx - boundingRadius);
+        const endX = Math.ceil(centerTx + boundingRadius);
+        const startY = Math.floor(centerTy - boundingRadius);
+        const endY = Math.ceil(centerTy + boundingRadius);
 
         let changed = false;
         for (let x = startX; x <= endX; x++) {
@@ -715,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Pointer Events for Draw, Pan, Zoom
     canvas.addEventListener('pointerdown', (e) => {
+        lastMouseEvent = e;
         activePointers.set(e.pointerId, e);
         
         if (activePointers.size === 2) {
@@ -768,6 +908,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     canvas.addEventListener('pointermove', (e) => {
+        lastMouseEvent = e;
         if (activePointers.has(e.pointerId)) {
             activePointers.set(e.pointerId, e);
         }
@@ -1032,6 +1173,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dx !== 0 || dy !== 0) {
                 cameraX += dx * panSpeed * dt;
                 cameraY += dy * panSpeed * dt;
+                
+                if (lastMouseEvent) {
+                    hoverCoords = getTileCoords(lastMouseEvent);
+                    if (isMouseDown) {
+                        interact(lastMouseEvent);
+                    }
+                }
+                
                 render();
                 keyboardPanAnimation = requestAnimationFrame(panLoop);
             } else {
@@ -1154,6 +1303,78 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to copy link:', err);
             alert('Failed to copy link to clipboard.');
         });
+    });
+    clearBgBtn.addEventListener('click', () => {
+        bgImageUrl.value = '';
+        customBgImageObj = null;
+        bgControls.style.display = 'none';
+        saveToStorage();
+    });
+
+    bgImageUrl.addEventListener('input', (e) => {
+        const url = e.target.value.trim();
+        if (!url) {
+            customBgImageObj = null;
+            bgControls.style.display = 'none';
+            saveToStorage();
+            return;
+        }
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+            customBgImageObj = img;
+            bgControls.style.display = 'block';
+            saveToStorage();
+        };
+        img.onerror = () => {
+            customBgImageObj = null;
+            bgControls.style.display = 'none';
+            saveToStorage();
+        };
+        img.src = url;
+    });
+
+    bgScaleInput.addEventListener('input', (e) => {
+        customBgScale = parseFloat(e.target.value) || 1;
+        bgScaleNumber.value = customBgScale;
+        saveToStorage();
+    });
+
+    bgScaleNumber.addEventListener('input', (e) => {
+        customBgScale = parseFloat(e.target.value) || 1;
+        bgScaleInput.value = customBgScale;
+        saveToStorage();
+    });
+
+    bgOpacityInput.addEventListener('input', (e) => {
+        customBgOpacity = parseFloat(e.target.value) || 0.5;
+        saveToStorage();
+    });
+
+
+    bgRotationInput.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val)) val = 0;
+        customBgRotation = val;
+        bgRotationNumber.value = val;
+        saveToStorage();
+    });
+
+    bgRotationNumber.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val)) return;
+        if (val < 0) val = 0;
+        if (val > 360) val = 360;
+        customBgRotation = val;
+        bgRotationInput.value = val;
+        saveToStorage();
+    });
+
+    bgRotationNumber.addEventListener('blur', (e) => {
+        if (isNaN(parseInt(e.target.value, 10))) {
+            bgRotationNumber.value = customBgRotation;
+            saveToStorage();
+        }
     });
     
     // Handle resize
