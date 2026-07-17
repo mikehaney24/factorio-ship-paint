@@ -161,7 +161,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function recomputeEntities() {
         const numBeltsElem = document.getElementById('numBelts');
         const numBelts = numBeltsElem ? parseInt(numBeltsElem.value, 10) : 0;
-        pathfindingRecompute(filledTiles, addWalls, numBelts, computedWalls, computedBelts);
+        const beltInsetElem = document.getElementById('beltInset');
+        const beltInset = beltInsetElem ? parseInt(beltInsetElem.value, 10) : 0;
+        pathfindingRecompute(filledTiles, addWalls, numBelts, computedWalls, computedBelts, beltInset);
     }
     
     function saveToStorage() {
@@ -174,6 +176,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const numBeltsElem = document.getElementById('numBelts');
             if (numBeltsElem) {
                 localStorage.setItem('factorio-ship-paint-belts', numBeltsElem.value);
+            }
+            const beltInsetElem = document.getElementById('beltInset');
+            if (beltInsetElem) {
+                localStorage.setItem('factorio-ship-paint-belt-inset', beltInsetElem.value);
             }
             
             localStorage.setItem('factorio-ship-paint-bg', bgImageUrl.value);
@@ -236,6 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (numBeltsElem && numBeltsElem.value && numBeltsElem.value !== '0') {
             params.set('belts', numBeltsElem.value);
         }
+        const beltInsetElem = document.getElementById('beltInset');
+        if (beltInsetElem && beltInsetElem.value && beltInsetElem.value !== '0') {
+            params.set('beltInset', beltInsetElem.value);
+        }
         if (addWalls) {
             params.set('walls', '1');
         }
@@ -269,6 +279,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (params.has('belts')) {
                     const numBeltsElem = document.getElementById('numBelts');
                     if (numBeltsElem) numBeltsElem.value = params.get('belts');
+                }
+                if (params.has('beltInset')) {
+                    const beltInsetElem = document.getElementById('beltInset');
+                    if (beltInsetElem) beltInsetElem.value = params.get('beltInset');
                 }
                 if (params.has('walls')) {
                     addWalls = params.get('walls') === '1';
@@ -405,6 +419,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const numBeltsElem = document.getElementById('numBelts');
             if (beltsStr !== null && numBeltsElem) {
                 numBeltsElem.value = beltsStr;
+            }
+            
+            const beltInsetStr = localStorage.getItem('factorio-ship-paint-belt-inset');
+            const beltInsetElem = document.getElementById('beltInset');
+            if (beltInsetStr !== null && beltInsetElem) {
+                beltInsetElem.value = beltInsetStr;
             }
             
             const bgStr = localStorage.getItem('factorio-ship-paint-bg');
@@ -1140,6 +1160,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const numBeltsElem = document.getElementById('numBelts');
     if (numBeltsElem) {
         numBeltsElem.addEventListener('change', () => {
+            recomputeEntities();
+            saveToStorage();
+            render();
+        });
+    }
+    
+    const beltInsetElem = document.getElementById('beltInset');
+    if (beltInsetElem) {
+        beltInsetElem.addEventListener('change', () => {
             recomputeEntities();
             saveToStorage();
             render();

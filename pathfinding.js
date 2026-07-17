@@ -1,4 +1,4 @@
-export function recomputeEntities(filledTiles, addWalls, numBelts, computedWalls, computedBelts) {
+export function recomputeEntities(filledTiles, addWalls, numBelts, computedWalls, computedBelts, beltInset = 0) {
     computedWalls.clear();
     computedBelts.clear();
     
@@ -58,6 +58,9 @@ export function recomputeEntities(filledTiles, addWalls, numBelts, computedWalls
 
         V = erode(V);
         if (addWalls) {
+            V = erode(V);
+        }
+        for (let i = 0; i < beltInset; i++) {
             V = erode(V);
         }
         
